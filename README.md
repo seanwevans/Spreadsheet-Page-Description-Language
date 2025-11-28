@@ -1,3 +1,6 @@
+![Status](https://img.shields.io/badge/Specification-v1.0-blue)
+![Engine](https://img.shields.io/badge/Engine-Google%20Apps%20Script-green)
+
 # Spreadsheet Page Description Language (SPDL)
 
 [Example](https://docs.google.com/spreadsheets/d/1SYbsbv3M6PNSxPFD_nSV5ypuiqDY3tPuvBJ46rLNb7s/edit?usp=sharing)
@@ -5,9 +8,6 @@
 **SPDL** is a lightweight, interpreted markup language designed to define high-fidelity, interactive documents and forms programmatically within the constraint-based environment of a spreadsheet grid.
 
 Inspired by the PDF specification and PostScript, SPDL separates the **Content Layer** (a linear stream of ASCII commands) from the **Presentation Layer** (the rendered spreadsheet view).
-
-![Status](https://img.shields.io/badge/Specification-v1.0-blue)
-![Engine](https://img.shields.io/badge/Engine-Google%20Apps%20Script-green)
 
 ## 🏗 Architecture
 
