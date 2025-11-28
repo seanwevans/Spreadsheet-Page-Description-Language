@@ -1,0 +1,200 @@
+function renderPDF() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = ss.getSheetByName("01_Hex_Stream");
+  const renderSheet = ss.getSheetByName("02_Rendered_View");
+  const data = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1).getValues();
+  const maxRows = 1000;
+  const maxCols = 26;
+  
+  let currentX = 1;
+  let currentY = 1;
+  let currentColor = "#000000";    
+  let isBold = "normal";
+  let isItalic = "normal";
+  let lineStyle = "none"; 
+  let currentRotation = 0;
+  let currentPath = {x:0, y:0, w:0, h:0};
+  let pageTopRow = 1;
+  let pageWidth = 0;
+  let pageHeight = 0;
+  let cellSize = 25;
+  let defaultFontSize = 15;
+
+  renderSheet.getRange(1, 1, maxRows, maxCols)
+    .clear({contentsOnly: false, formatOnly: true})
+    .clearContent()
+    .clearDataValidations()
+    .setBackground("#505050")
+    .setFontColor("black")
+    .setFontSize(defaultFontSize)
+    .setFontWeight("normal")
+    .setFontStyle("normal")
+    .setFontLine("none")
+    .setTextRotation(0)
+    .setBorder(false, false, false, false, false, false);
+
+  renderSheet.setColumnWidths(1, maxCols, cellSize);
+  renderSheet.setRowHeights(1, maxRows, cellSize);
+
+  let oldImages = renderSheet.getImages();
+  for (let k = 0; k < oldImages.length; k++)
+    oldImages[k].remove();
+  
+  for (let i = 0; i < data.length; i++) {
+    let command = data[i][0].toString();
+
+    // --- IMAGE (InsertImage) ---
+    if (command.includes("/InsertImage")) {
+       let match = command.match(/\(([^)]+)\)/);
+       if (match) {
+         let url = match[1];
+         let remaining = command.replace(match[0], ""); 
+         let nums = remaining.trim().split(" ");
+         let w = parseInt(nums[0]);
+         let h = parseInt(nums[1]);
+         
+         if (currentY > 0 && currentX > 0) {
+           let img = renderSheet.insertImage(url, currentX, currentY); 
+           img.setWidth(w).setHeight(h);
+         }
+       }
+    }
+
+    // --- ANNOTATIONS (/Note) ---    
+    if (command.includes("/Note")) {
+       let match = command.match(/\(([^)]+)\)/);
+       if (match) {
+         if (currentY > 0 && currentX > 0) {
+           renderSheet.getRange(currentY, currentX).setNote(match[1]);
+         }
+       }
+    }
+
+    // --- ACROFORMS ---
+    if (command.includes("/CheckBox")) {
+       if (currentY > 0 && currentX > 0) {
+         let range = renderSheet.getRange(currentY, currentX, 1, 1);
+         range.merge().insertCheckboxes().setHorizontalAlignment("center").setVerticalAlignment("middle");
+       }
+    }
+    if (command.includes("/Dropdown")) {
+       let match = command.match(/\(([^)]+)\)/);
+       if (match) {
+         let options = match[1].split(",").map(s => s.trim());
+         let rule = SpreadsheetApp.newDataValidation().requireValueInList(options, true).build();
+         if (currentY > 0 && currentX > 0) {
+           let range = renderSheet.getRange(currentY, currentX, 1, 6);
+           range.merge()
+            .setDataValidation(rule)
+            .setValue(options[0])
+            .setBackground("#FFF2CC")
+            .setHorizontalAlignment("center")
+            .setVerticalAlignment("middle")
+            .setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID);
+         }
+       }
+    }
+
+    // --- PAGE SETUP ---
+    if (command.includes("MediaBox")) {
+      let parts = command.split(" ");
+      pageWidth = parseInt(parts[0]);
+      pageHeight = parseInt(parts[1]);
+      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight);
+    }
+    if (command.includes("/NewPage")) {
+      pageTopRow = pageTopRow + pageHeight + 2;
+      currentX = 1;
+      currentY = pageTopRow;
+      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight);
+    }
+
+    // --- SHAPES ---
+    if (command.includes("re")) {
+      let parts = command.split(" ");
+      currentPath.x = Math.floor(parseInt(parts[0])); 
+      currentPath.y = pageTopRow + Math.floor(parseInt(parts[1])); 
+      currentPath.w = Math.floor(parseInt(parts[2]));
+      currentPath.h = Math.floor(parseInt(parts[3]));
+    }
+    if (command === "f" || command === "S") {       
+       if (currentPath.w > 0 && currentPath.h > 0) {
+         let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
+         if (command === "f") range.setBackground(currentColor);
+         if (command === "S") range.setBorder(true, true, true, true, false, false, currentColor, SpreadsheetApp.BorderStyle.SOLID);
+       }
+    }
+
+    // --- PIXEL IMAGES ---    
+    if (command.includes("ID")) {
+      let parts = command.split(" ");
+      let width = parseInt(parts[0]);
+      let height = parseInt(parts[1]);
+      let pixelData = parts[3];
+      if (pixelData && pixelData.length >= (width * height)) {
+        for (let r = 0; r < height; r++) {        
+          for (let c = 0; c < width; c++) {
+            let colorCode = pixelData[(r * width) + c];
+            let pixelColor = null;
+            if (colorCode === '1') pixelColor = "#000000"; 
+            if (colorCode === '2') pixelColor = "#F1C40F"; 
+            if (colorCode === '3') pixelColor = "#E74C3C"; 
+            if (pixelColor) renderSheet.getRange(currentY + r, currentX + c).setBackground(pixelColor);
+          }
+        }
+      }
+    }
+
+    // --- LINKS & TEXT ---
+    if (command.includes("/Link")) {
+      let matches = command.match(/\(([^)]+)\)/g);
+      if (matches && matches.length >= 2) {
+        let url = matches[0].replace(/[()]/g, "");
+        let label = matches[1].replace(/[()]/g, "");
+        let cell = renderSheet.getRange(currentY, currentX);
+        cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
+        cell.setFontWeight(isBold).setFontStyle(isItalic);
+      }
+    }
+    if (command.includes("/Rotate")) {
+       let parts = command.split(" ");
+       currentRotation = parseInt(parts[0]);
+    }
+    if (command.includes("rg")) {
+      let parts = command.split(" ");
+      currentColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255); 
+    }
+    if (command.includes("Tf")) {
+      isBold = command.includes("/F2") ? "bold" : "normal";
+      isItalic = command.includes("/F3") ? "italic" : "normal";
+    }
+    if (command.includes("Tr")) {
+      lineStyle = command.startsWith("1") ? "underline" : "none";
+    }
+    if (command.includes("Td")) {
+      let parts = command.split(" ");
+      currentX += Math.floor(parseInt(parts[0]) / 10); 
+      currentY += Math.floor(parseInt(parts[1]) / 10);
+    }
+    if (command.includes("Tj")) {
+      let match = command.match(/\(([^)]+)\)/);
+      if (match) {
+         if (currentY > 0 && currentX > 0) {
+           let cell = renderSheet.getRange(currentY, currentX); 
+           cell.setValue(match[1]);
+           cell.setFontColor(currentColor).setFontWeight(isBold).setFontStyle(isItalic).setFontLine(lineStyle).setTextRotation(currentRotation);
+         }
+      }
+    }
+  }
+}
+
+function drawPage(sheet, topRow, width, height) {
+  let pageRange = sheet.getRange(topRow, 1, height, width);
+  pageRange.setBackground("white");
+  pageRange.setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID_THICK);
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + ((1 << 24) + (Math.floor(r) << 16) + (Math.floor(g) << 8) + Math.floor(b)).toString(16).slice(1);
+}
