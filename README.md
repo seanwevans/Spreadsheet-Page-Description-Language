@@ -41,4 +41,4 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 ```
 
 ### 3. Render
-Run the renderPDF() function. Watch 02_Rendered_View transform.
+Run the renderPDF() function.
