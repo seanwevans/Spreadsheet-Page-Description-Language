@@ -37,6 +37,7 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 0 0 0 rg              % Set Ink Color to Black
 0 40 Td               % Move Down
 (Welcome to SPDL) Tj  % Print Text
-/CheckBox             % Render Interactive Checkbox```
+/CheckBox             % Render Interactive Checkbox
+```
 
 ### 3. RenderRun the renderPDF() function. Watch 02_Rendered_View transform.
