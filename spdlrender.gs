@@ -8,7 +8,8 @@ function renderPDF() {
   
   let currentX = 1;
   let currentY = 1;
-  let currentColor = "#000000";    
+  let currentFillColor = "#000000";
+  let currentStrokeColor = "#000000";
   let isBold = "normal";
   let isItalic = "normal";
   let lineStyle = "none"; 
@@ -117,11 +118,11 @@ function renderPDF() {
       currentPath.w = Math.floor(parseInt(parts[2]));
       currentPath.h = Math.floor(parseInt(parts[3]));
     }
-    if (command === "f" || command === "S") {       
+    if (command === "f" || command === "S") {
        if (currentPath.w > 0 && currentPath.h > 0) {
          let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
-         if (command === "f") range.setBackground(currentColor);
-         if (command === "S") range.setBorder(true, true, true, true, false, false, currentColor, SpreadsheetApp.BorderStyle.SOLID);
+         if (command === "f") range.setBackground(currentFillColor);
+         if (command === "S") range.setBorder(true, true, true, true, false, false, currentStrokeColor, SpreadsheetApp.BorderStyle.SOLID);
        }
     }
 
@@ -153,7 +154,7 @@ function renderPDF() {
         let label = matches[1].replace(/[()]/g, "");
         let cell = renderSheet.getRange(currentY, currentX);
         cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontWeight(isBold).setFontStyle(isItalic);
+        cell.setFontColor(currentFillColor).setFontWeight(isBold).setFontStyle(isItalic);
       }
     }
     if (command.includes("/Rotate")) {
@@ -162,7 +163,11 @@ function renderPDF() {
     }
     if (command.includes("rg")) {
       let parts = command.split(" ");
-      currentColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255); 
+      currentFillColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
+    }
+    if (command.includes("SC")) {
+      let parts = command.split(" ");
+      currentStrokeColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
     }
     if (command.includes("Tf")) {
       isBold = command.includes("/F2") ? "bold" : "normal";
@@ -180,9 +185,9 @@ function renderPDF() {
       let match = command.match(/\(([^)]+)\)/);
       if (match) {
          if (currentY > 0 && currentX > 0) {
-           let cell = renderSheet.getRange(currentY, currentX); 
+           let cell = renderSheet.getRange(currentY, currentX);
            cell.setValue(match[1]);
-           cell.setFontColor(currentColor).setFontWeight(isBold).setFontStyle(isItalic).setFontLine(lineStyle).setTextRotation(currentRotation);
+           cell.setFontColor(currentFillColor).setFontWeight(isBold).setFontStyle(isItalic).setFontLine(lineStyle).setTextRotation(currentRotation);
          }
       }
     }
