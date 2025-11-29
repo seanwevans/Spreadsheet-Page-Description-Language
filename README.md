@@ -42,3 +42,23 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 
 ### 3. Render
 Run the renderPDF() function.
+
+## ✏️ Stroke Widths
+Control border weight with the `w` command before drawing strokes. Supported values map to Google Apps Script border styles:
+
+| Command | Border Style                         |
+|---------|--------------------------------------|
+| `1 w`   | `SpreadsheetApp.BorderStyle.SOLID`   |
+| `2 w`   | `SpreadsheetApp.BorderStyle.SOLID_MEDIUM` |
+| `3 w`   | `SpreadsheetApp.BorderStyle.SOLID_THICK`  |
+| `4 w`   | `SpreadsheetApp.BorderStyle.DOUBLE`  |
+
+Example: set a thicker outline for the page frame and rectangles:
+
+```spdl
+16 20 MediaBox        % Page size
+3 w                   % Use thick strokes
+0 0 0 rg              % Black ink
+2 2 8 6 re            % Define rectangle
+S                     % Stroke rectangle with current width
+```
