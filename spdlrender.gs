@@ -165,9 +165,12 @@ function renderPDF() {
       let parts = command.split(" ");
       currentFillColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
     }
-    if (command.includes("SC")) {
-      let parts = command.split(" ");
-      currentStrokeColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
+    if (/\bSC\b/.test(command)) {
+      let parts = command.trim().split(/\s+/);
+      let scIndex = parts.indexOf("SC");
+      if (scIndex >= 3) {
+        currentStrokeColor = rgbToHex(parts[scIndex-3]*255, parts[scIndex-2]*255, parts[scIndex-1]*255);
+      }
     }
     if (command.includes("Tf")) {
       isBold = command.includes("/F2") ? "bold" : "normal";
