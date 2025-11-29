@@ -11,7 +11,7 @@ function renderPDF() {
   let currentColor = "#000000";    
   let isBold = "normal";
   let isItalic = "normal";
-  let lineStyle = "none"; 
+  let lineStyle = "none";
   let currentRotation = 0;
   let currentPath = {x:0, y:0, w:0, h:0};
   let pageTopRow = 1;
@@ -19,6 +19,7 @@ function renderPDF() {
   let pageHeight = 0;
   let cellSize = 25;
   let defaultFontSize = 15;
+  let currentFontSize = defaultFontSize;
 
   renderSheet.getRange(1, 1, maxRows, maxCols)
     .clear({contentsOnly: false, formatOnly: true})
@@ -26,7 +27,7 @@ function renderPDF() {
     .clearDataValidations()
     .setBackground("#505050")
     .setFontColor("black")
-    .setFontSize(defaultFontSize)
+    .setFontSize(currentFontSize)
     .setFontWeight("normal")
     .setFontStyle("normal")
     .setFontLine("none")
@@ -171,18 +172,27 @@ function renderPDF() {
     if (command.includes("Tr")) {
       lineStyle = command.startsWith("1") ? "underline" : "none";
     }
+    if (command.includes("Ts")) {
+      let parts = command.split(" ");
+      currentFontSize = parseInt(parts[0]);
+    }
     if (command.includes("Td")) {
       let parts = command.split(" ");
-      currentX += Math.floor(parseInt(parts[0]) / 10); 
+      currentX += Math.floor(parseInt(parts[0]) / 10);
       currentY += Math.floor(parseInt(parts[1]) / 10);
     }
     if (command.includes("Tj")) {
       let match = command.match(/\(([^)]+)\)/);
       if (match) {
          if (currentY > 0 && currentX > 0) {
-           let cell = renderSheet.getRange(currentY, currentX); 
+           let cell = renderSheet.getRange(currentY, currentX);
            cell.setValue(match[1]);
-           cell.setFontColor(currentColor).setFontWeight(isBold).setFontStyle(isItalic).setFontLine(lineStyle).setTextRotation(currentRotation);
+           cell.setFontColor(currentColor)
+             .setFontSize(currentFontSize)
+             .setFontWeight(isBold)
+             .setFontStyle(isItalic)
+             .setFontLine(lineStyle)
+             .setTextRotation(currentRotation);
          }
       }
     }
