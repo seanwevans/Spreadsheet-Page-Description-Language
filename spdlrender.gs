@@ -111,9 +111,9 @@ function renderPDF() {
     }
 
     // --- LINE WIDTH ---
-    if (/^\d+\s+w$/.test(command)) {
-      let parts = command.split(" ");
-      let widthValue = parseInt(parts[0]);
+    let lineWidthMatch = command.match(/^(\d+)\s+w\b/);
+    if (lineWidthMatch) {
+      let widthValue = parseInt(lineWidthMatch[1]);
       currentLineWidth = mapLineWidth(widthValue);
     }
 
