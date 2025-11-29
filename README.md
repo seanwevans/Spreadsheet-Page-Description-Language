@@ -42,3 +42,40 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 
 ### 3. Render
 Run the renderPDF() function.
+
+## ✍️ Alignment Commands
+
+Control horizontal and vertical alignment without changing font settings:
+
+- `/Align HLeft`, `/Align HCenter`, `/Align HRight`
+- `/Align VTop`, `/Align VMiddle`, `/Align VBottom`
+- Numeric shorthand using `TA` (`Text Align`):
+  - `0 TA` → horizontal left
+  - `1 TA` → horizontal center
+  - `2 TA` → horizontal right
+  - `3 TA` → vertical top
+  - `4 TA` → vertical middle
+  - `5 TA` → vertical bottom
+  - `6 TA` → reset both to the sheet defaults
+
+### Sample Streams
+
+Center a heading, then left-align the next line:
+
+```spdl
+16 20 MediaBox
+/Align HCenter
+(Centered Title) Tj
+0 TA
+0 -10 Td
+(Left-aligned subtitle) Tj
+```
+
+Mix vertical and horizontal alignment for hyperlinks:
+
+```spdl
+16 20 MediaBox
+/Align VMiddle
+1 TA
+(https://example.com) (Click Me) /Link
+```
