@@ -173,8 +173,24 @@ function renderPDF() {
     }
     if (command.includes("Td")) {
       let parts = command.split(" ");
-      currentX += Math.floor(parseInt(parts[0]) / 10); 
+      currentX += Math.floor(parseInt(parts[0]) / 10);
       currentY += Math.floor(parseInt(parts[1]) / 10);
+    }
+    if (command.includes("/MoveTo")) {
+      let parts = command.split(" ");
+      let targetX = parseInt(parts[1]);
+      let targetY = parseInt(parts[2]);
+
+      if (!isNaN(targetX) && !isNaN(targetY)) {
+        let maxX = pageWidth > 0 ? pageWidth : maxCols;
+        let pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
+
+        targetX = Math.max(1, Math.min(maxX, targetX));
+        targetY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
+
+        currentX = targetX;
+        currentY = targetY;
+      }
     }
     if (command.includes("Tj")) {
       let match = command.match(/\(([^)]+)\)/);

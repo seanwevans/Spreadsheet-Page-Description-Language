@@ -40,5 +40,22 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 /CheckBox             % Render Interactive Checkbox
 ```
 
-### 3. Render
+### 3. Positioning Commands
+
+- **`Td`**: Relative movement. Offsets the current cursor by the provided X/Y deltas (in tenths of a grid cell). Best for flowing text or incremental placement.
+- **`/MoveTo x y`**: Absolute movement. Jumps the cursor to a specific grid cell on the active page. Y coordinates are interpreted relative to the top of the current page.
+
+#### Combining `Td` and `/MoveTo`
+
+```spdl
+16 20 MediaBox
+/MoveTo 4 3      % Jump to absolute row/column within the page
+(Header) Tj
+20 0 Td          % Move right relative to current position
+(Next Cell) Tj
+/MoveTo 1 15     % Jump to a new row on the same page
+(Footer) Tj
+```
+
+### 4. Render
 Run the renderPDF() function.
