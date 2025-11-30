@@ -2,7 +2,12 @@ function renderPDF() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheet = ss.getSheetByName("01_Hex_Stream");
   const renderSheet = ss.getSheetByName("02_Rendered_View");
-  const data = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1).getValues();
+
+  const lastRow = sourceSheet.getLastRow();
+  const data = lastRow >= 2 ? sourceSheet.getRange(2, 1, lastRow - 1).getValues() : [];
+  if (data.length === 0) {
+    Logger.log("renderPDF exiting: no stream data rows detected (lastRow=%s)", lastRow);
+  }
   const maxRows = 1000;
   const maxCols = 26;
 
