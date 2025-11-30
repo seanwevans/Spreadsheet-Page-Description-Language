@@ -30,7 +30,7 @@ function main(workbook: ExcelScript.Workbook) {
   canvas.getFormat().getFont().setSize(defaultFontSize);
   canvas.getFormat().getFont().setBold(false);
   canvas.getFormat().getFont().setItalic(false);
-  canvas.getFormat().setTextRotation(0);
+  canvas.getFormat().setTextOrientation(0);
   canvas.getFormat().getBorders().forEach(border => {
     border.setStyle(ExcelScript.BorderLineStyle.none);
   });
@@ -332,7 +332,7 @@ function applyTextFormatting(cell: ExcelScript.Range, color: string, size: numbe
   font.setBold(bold);
   font.setItalic(italic);
   font.setUnderline(underline ? ExcelScript.RangeUnderlineStyle.single : ExcelScript.RangeUnderlineStyle.none);
-  format.setTextRotation(rotation);
+  format.setTextOrientation(rotation);
   format.setHorizontalAlignment(hAlign);
   format.setVerticalAlignment(vAlign);
 }
@@ -368,8 +368,8 @@ function rgbToHex(r: number, g: number, b: number): string {
 
 function mapLineWidth(widthValue: number): ExcelScript.BorderLineStyle {
   if (widthValue === 1) return ExcelScript.BorderLineStyle.continuous;
-  if (widthValue === 2) return ExcelScript.BorderLineStyle.thick;
-  if (widthValue === 3) return ExcelScript.BorderLineStyle.thick;
+  if (widthValue === 2) return ExcelScript.BorderLineStyle.continuous;
+  if (widthValue === 3) return ExcelScript.BorderLineStyle.double;
   if (widthValue === 4) return ExcelScript.BorderLineStyle.double;
   return ExcelScript.BorderLineStyle.continuous;
 }
