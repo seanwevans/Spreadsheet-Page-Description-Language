@@ -30,7 +30,10 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 1. Create a new Google Sheet with two sheets named exactly:
    - `01_Hex_Stream`
    - `02_Rendered_View`
-2. Open **Extensions → Apps Script** and paste the contents of [`spdlrender.gs`](spdlrender.gs) into the editor.
+2. Choose a renderer implementation:
+   - **Google Sheets**: Open **Extensions → Apps Script** and paste [`spdlrender.gs`](spdlrender.gs) into the editor.
+   - **Excel for the web (Office Scripts)**: Open **Automate → New Script** and paste [`spdlrender.office.ts`](spdlrender.office.ts) into the editor.
+   - **Excel desktop (VBA)**: Open the VBA editor (**Alt+F11**), add a new module, and paste [`spdlrender.vba`](spdlrender.vba).
 3. Save the project and grant permissions to the script when prompted.
 4. (Optional) Adjust the `maxRows`, `maxCols`, or `cellSize` constants if you need a different canvas size.
 
