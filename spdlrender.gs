@@ -141,7 +141,7 @@ function renderPDF() {
        if (currentPath.w > 0 && currentPath.h > 0) {
          let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
          if (command === "f") range.setBackground(currentFillColor);
-         if (command === "S") range.setBorder(true, true, true, true, false, false, currentStrokeColor, SpreadsheetApp.BorderStyle.SOLID);
+         if (command === "S") range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
        }
     }
 
