@@ -19,8 +19,8 @@
  * Upserts leverage `performUpsert` on Row+Col to avoid duplicate records.
  */
 
-import fs from "fs";
-import path from "path";
+const fs = require("fs");
+const path = require("path");
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const RATE_LIMIT_DELAY_MS = 210; // Airtable allows ~5 requests/sec
