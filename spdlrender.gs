@@ -14,7 +14,8 @@ function renderPDF() {
   let currentColor = "#000000";    
   let isBold = "normal";
   let isItalic = "normal";
-  let lineStyle = "none"; 
+  let lineStyle = "none";
+  let currentLineWidth = mapLineWidth(3);
   let currentRotation = 0;
   let currentPath = {x:0, y:0, w:0, h:0};
   let pageTopRow = 1;
@@ -46,7 +47,7 @@ function renderPDF() {
     oldImages[k].remove();
   
   for (let i = 0; i < data.length; i++) {
-    let command = data[i][0].toString();
+    let command = data[i][0].toString().trim();
 
     // --- IMAGE (InsertImage) ---
     if (command.includes("/InsertImage")) {
@@ -105,13 +106,20 @@ function renderPDF() {
       let parts = command.split(" ");
       pageWidth = parseInt(parts[0]);
       pageHeight = parseInt(parts[1]);
-      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight);
+      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
     }
     if (command.includes("/NewPage")) {
       pageTopRow = pageTopRow + pageHeight + 2;
       currentX = 1;
       currentY = pageTopRow;
-      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight);
+      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+    }
+
+    // --- LINE WIDTH ---
+    let lineWidthMatch = command.match(/^(\d+)\s+w\b/);
+    if (lineWidthMatch) {
+      let widthValue = parseInt(lineWidthMatch[1]);
+      currentLineWidth = mapLineWidth(widthValue);
     }
 
     // --- SHAPES ---
@@ -122,11 +130,11 @@ function renderPDF() {
       currentPath.w = Math.floor(parseInt(parts[2]));
       currentPath.h = Math.floor(parseInt(parts[3]));
     }
-    if (command === "f" || command === "S") {       
+    if (command === "f" || command === "S") {
        if (currentPath.w > 0 && currentPath.h > 0) {
          let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
          if (command === "f") range.setBackground(currentColor);
-         if (command === "S") range.setBorder(true, true, true, true, false, false, currentColor, SpreadsheetApp.BorderStyle.SOLID);
+         if (command === "S") range.setBorder(true, true, true, true, false, false, currentColor, currentLineWidth);
        }
     }
 
@@ -249,12 +257,20 @@ function renderPDF() {
   }
 }
 
-function drawPage(sheet, topRow, width, height) {
+function drawPage(sheet, topRow, width, height, borderStyle) {
   let pageRange = sheet.getRange(topRow, 1, height, width);
   pageRange.setBackground("white");
-  pageRange.setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID_THICK);
+  pageRange.setBorder(true, true, true, true, false, false, "black", borderStyle || mapLineWidth(3));
 }
 
 function rgbToHex(r, g, b) {
   return "#" + ((1 << 24) + (Math.floor(r) << 16) + (Math.floor(g) << 8) + Math.floor(b)).toString(16).slice(1);
+}
+
+function mapLineWidth(widthValue) {
+  if (widthValue === 1) return SpreadsheetApp.BorderStyle.SOLID;
+  if (widthValue === 2) return SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
+  if (widthValue === 3) return SpreadsheetApp.BorderStyle.SOLID_THICK;
+  if (widthValue === 4) return SpreadsheetApp.BorderStyle.DOUBLE;
+  return SpreadsheetApp.BorderStyle.SOLID;
 }
