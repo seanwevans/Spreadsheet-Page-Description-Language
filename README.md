@@ -34,8 +34,27 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
    - **Google Sheets**: Open **Extensions → Apps Script** and paste [`spdlrender.gs`](spdlrender.gs) into the editor.
    - **Excel for the web (Office Scripts)**: Open **Automate → New Script** and paste [`spdlrender.office.ts`](spdlrender.office.ts) into the editor.
    - **Excel desktop (VBA)**: Open the VBA editor (**Alt+F11**), add a new module, and paste [`spdlrender.vba`](spdlrender.vba).
+   - **LibreOffice Calc (UNO Python macro)**: Copy [`spdlrender.ods.py`](spdlrender.ods.py) into **My Macros → Standard** via **Tools → Macros → Organize Macros → Python**, or place it beside your `.ods` file and load it through the Python macro bridge.
 3. Save the project and grant permissions to the script when prompted.
 4. (Optional) Adjust the `maxRows`, `maxCols`, or `cellSize` constants if you need a different canvas size.
+
+### Calc template
+- Download [`spdl_calc_template.ods.txt`](spdl_calc_template.ods.txt). The file is pure base64 text so Git hosting shows it inline. Decode it to produce `spdl_calc_template.ods`:
+  - **Linux/macOS**:
+    ```bash
+    python - <<'PY'
+    import base64, pathlib
+    b64 = pathlib.Path('spdl_calc_template.ods.txt').read_text().replace('\n','')
+    pathlib.Path('spdl_calc_template.ods').write_bytes(base64.b64decode(b64))
+    PY
+    ```
+  - **Windows (PowerShell)**:
+    ```powershell
+    $b64 = Get-Content -Raw -Path ./spdl_calc_template.ods.txt
+    [IO.File]::WriteAllBytes('spdl_calc_template.ods',[Convert]::FromBase64String($b64))
+    ```
+- The template already includes both required sheets (`01_Hex_Stream` and `02_Rendered_View`) with a neutral background.
+- Save a copy before attaching macros so LibreOffice security prompts can be handled on the working copy.
 
 ## Rendering a Document
 1. In `01_Hex_Stream`, place one command per row starting at **row 2, column A**.
@@ -43,6 +62,13 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
    - Clear previous formatting and images in `02_Rendered_View`.
    - Resize rows/columns to 25 px and set default styles.
    - Interpret each command and update the grid.
+
+### Running in LibreOffice Calc
+1. Open `spdl_calc_template.ods` (or any `.ods` with the two required sheets).
+2. Add `spdlrender.ods.py` to **My Macros** (or keep it in the same folder) and restart LibreOffice so the macro is discoverable.
+3. Run **Tools → Macros → Run Macro → render_spdl**.
+4. The macro clears `02_Rendered_View`, applies 25 px sizing, then processes each SPDL command in `01_Hex_Stream`.
+5. If images fail to load due to sandboxing, use file URLs reachable from LibreOffice or pre-download assets into the document.
 
 ## Command Reference
 The renderer understands a subset of PDF/PostScript-inspired operations. Commands are case-sensitive.
@@ -161,3 +187,7 @@ S
 - Pixel art `ID` data must include at least `width × height` characters; extra data is ignored.
 - Alignment resets can be triggered with `6 TA` or higher to fall back to the sheet’s defaults.
 - The default canvas is 1000 rows × 26 columns with 25 px cells; adjust the constants in the script if needed.
+- LibreOffice UNO notes:
+  - Image insertion relies on accessible URLs; embedded images are not extracted from the command stream.
+  - Form controls map to checkbox shapes and list validations; richer form widgets (radio groups, text fields) are not yet implemented.
+  - Calc applies rotation in 1/100° steps, so slight rounding differences from Google Sheets/Excel may appear.
