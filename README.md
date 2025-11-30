@@ -34,8 +34,60 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
    - **Google Sheets**: Open **Extensions → Apps Script** and paste [`spdlrender.gs`](spdlrender.gs) into the editor.
    - **Excel for the web (Office Scripts)**: Open **Automate → New Script** and paste [`spdlrender.office.ts`](spdlrender.office.ts) into the editor.
    - **Excel desktop (VBA)**: Open the VBA editor (**Alt+F11**), add a new module, and paste [`spdlrender.vba`](spdlrender.vba).
+   - **Airtable (REST API)**: Use [`spdlrender.airtable.js`](spdlrender.airtable.js) with Node.js ≥18 and an Airtable personal access token to render into Airtable grids.
 3. Save the project and grant permissions to the script when prompted.
 4. (Optional) Adjust the `maxRows`, `maxCols`, or `cellSize` constants if you need a different canvas size.
+
+## Airtable Renderer (API-backed)
+
+`spdlrender.airtable.js` lets you push SPDL streams into Airtable bases that expose REST APIs but lack native scripting. The renderer maps one record per cell in a grid-style table and uses `performUpsert` on `Row`+`Col` to avoid duplicates.
+
+### Airtable table schema
+- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
+- **01_Hex_Stream** (optional): store SPDL commands for reference. The script expects the stream locally (stdin/file); storing it in Airtable is for traceability only.
+
+### Configuration
+Copy `spdlrender.airtable.config.json` and fill in your values:
+
+```json
+{
+  "apiToken": "patXXXXXXXXXXXXXX",
+  "baseId": "appXXXXXXXXXXXXXX",
+  "renderTable": "02_Rendered_View",
+  "streamPath": "example.spdl",
+  "truncateTable": true,
+  "batchSize": 10
+}
+```
+
+- `apiToken`: Airtable personal access token with **data.records:write** scope on the base.
+- `baseId`: target base identifier (e.g., `app...`).
+- `renderTable`: Airtable table name that stores rendered cells.
+- `streamPath`: path to the SPDL text file; omit to read from stdin.
+- `truncateTable`: set `true` to clear the render table before upserting new cells.
+- `batchSize`: optional patch batch size (default 10) to control request payloads.
+
+### Running
+1. Ensure Node.js ≥18 (built-in `fetch` is required).
+2. Install no dependencies; the script uses native modules.
+3. Run:
+
+```bash
+node spdlrender.airtable.js spdlrender.airtable.config.json
+```
+
+When `truncateTable` is enabled the script deletes existing records in batches of 10 to respect Airtable limits. It then batches upserts (default 10 records/request) with a ~200 ms delay to stay under the ~5 req/s API throttle.
+
+### Supported SPDL commands and constraints
+- `MediaBox`, `/NewPage`, `/MoveTo`, `Td` — cursor and paging; Y is clamped to the last defined page height.
+- `(text) Tj` — writes text with fill color, bold/italic, underline, rotation, and alignment fields.
+- `(url) (label) /Link` — stores label and URL; Airtable renders hyperlinks if the field type supports it.
+- `r g b rg` / `r g b SC` — maps to `Background`/`BorderColor` hex values.
+- `x y w h re` + `f` or `S` — fills or strokes rectangular regions by upserting individual cells.
+- `w h ID <data>` — basic pixel art using color codes 1–3.
+- `/CheckBox`, `(opt1,opt2) /Dropdown`, `(note) /Note`, `/InsertImage` — map to checkbox, single select, long text, and attachment fields respectively.
+
+Limitations: Airtable lacks cell merging/rotation at the API level; alignment is captured as metadata but visual layout depends on your interface. Image size metadata is stored in notes because Airtable attachments auto-size. Keep payloads modest (under a few thousand cells) to avoid rate limiting.
 
 ## Rendering a Document
 1. In `01_Hex_Stream`, place one command per row starting at **row 2, column A**.
