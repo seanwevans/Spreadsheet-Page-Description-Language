@@ -1,7 +1,7 @@
 # Spreadsheet Page Description Language (SPDL)
 [Example](https://docs.google.com/spreadsheets/d/1SYbsbv3M6PNSxPFD_nSV5ypuiqDY3tPuvBJ46rLNb7s/edit?usp=sharing)
 
-SPDL is a lightweight, interpreted markup language for building high-fidelity, interactive documents inside Google Sheets. It separates a linear **content stream** from the rendered **presentation layer**, letting you describe pages, text, shapes, images, and form controls using concise commands that are parsed by a Google Apps Script renderer.
+SPDL is a lightweight, interpreted markup language for building high-fidelity, interactive documents inside spreadsheets. It separates a linear **content stream** from the rendered **presentation layer**, letting you describe pages, text, shapes, images, and form controls using concise commands that are parsed by a renderer.
 
 ![Status](https://img.shields.io/badge/Specification-v1.0-blue)
 ![Engine](https://img.shields.io/badge/Engine-Google%20Apps%20Script-green)
