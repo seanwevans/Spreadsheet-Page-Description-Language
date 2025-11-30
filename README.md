@@ -157,6 +157,3 @@ S
 - Pixel art `ID` data must include at least `width × height` characters; extra data is ignored.
 - Alignment resets can be triggered with `6 TA` or higher to fall back to the sheet’s defaults.
 - The default canvas is 1000 rows × 26 columns with 25 px cells; adjust the constants in the script if needed.
-
-## License
-MIT (c) 2024.
