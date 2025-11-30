@@ -40,6 +40,19 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 /CheckBox             % Render Interactive Checkbox
 ```
 
+### 3. Adjust font size with `Ts`
+
+Use the `Ts` operator to update the current font size before placing text. The size is applied to subsequent `Tj` commands until `Ts` is called again.
+
+```spdl
+16 20 MediaBox     % Set page size 16x20 units
+/F2 15 Tf          % Bold font face
+12 Ts              % Set font size to 12pt
+40 40 Td           % Move Cursor
+(Hello World) Tj   % Render 12pt text
+20 Ts              % Increase to 20pt
+0 40 Td            % Move Down
+(Bigger Text) Tj   % Render 20pt text
 ### 3. Independent Fill & Stroke Colors
 Use `rg` to set the fill color and `SC` to set the stroke color independently:
 

@@ -24,6 +24,7 @@ function renderPDF() {
   let pageHeight = 0;
   let cellSize = 25;
   let defaultFontSize = 15;
+  let currentFontSize = defaultFontSize;
   let currentHorizontalAlignment = defaultHorizontalAlignment;
   let currentVerticalAlignment = defaultVerticalAlignment;
 
@@ -33,7 +34,7 @@ function renderPDF() {
     .clearDataValidations()
     .setBackground("#505050")
     .setFontColor("black")
-    .setFontSize(defaultFontSize)
+    .setFontSize(currentFontSize)
     .setFontWeight("normal")
     .setFontStyle("normal")
     .setFontLine("none")
