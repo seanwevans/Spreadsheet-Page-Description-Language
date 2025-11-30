@@ -10,6 +10,7 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 - [Overview](#overview)
 - [How It Works](#how-it-works)
 - [Setup](#setup)
+- [Apple Numbers Renderer](#apple-numbers-renderer)
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
 - [Examples](#examples)
@@ -34,8 +35,32 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
    - **Google Sheets**: Open **Extensions → Apps Script** and paste [`spdlrender.gs`](spdlrender.gs) into the editor.
    - **Excel for the web (Office Scripts)**: Open **Automate → New Script** and paste [`spdlrender.office.ts`](spdlrender.office.ts) into the editor.
    - **Excel desktop (VBA)**: Open the VBA editor (**Alt+F11**), add a new module, and paste [`spdlrender.vba`](spdlrender.vba).
+   - **Apple Numbers (AppleScript/Shortcuts)**: On macOS, open **Script Editor** or the **Shortcuts** app and paste [`spdlrender.numbers.applescript`](spdlrender.numbers.applescript). The script reads the `01_Hex_Stream` sheet and renders into `02_Rendered_View`.
 3. Save the project and grant permissions to the script when prompted.
 4. (Optional) Adjust the `maxRows`, `maxCols`, or `cellSize` constants if you need a different canvas size.
+
+## Apple Numbers Renderer
+Apple Numbers does not offer as rich an API as Google Sheets or Office, but the included AppleScript provides a native option for macOS users to preview SPDL layouts.
+
+### Setup (macOS)
+1. Open the Numbers workbook that contains `01_Hex_Stream` and `02_Rendered_View` as the first tables on each sheet.
+2. Open **Script Editor** (or **Shortcuts** → **New Shortcut → Run AppleScript**) and paste the contents of [`spdlrender.numbers.applescript`](spdlrender.numbers.applescript).
+3. The first run will prompt for **Automation** access so the script can control Numbers; approve the request.
+4. Run the script while the workbook is frontmost. Progress and unsupported commands are logged to a sheet named **Automation Log**.
+
+### Feature Support Matrix (AppleScript renderer)
+| SPDL feature | Status |
+| --- | --- |
+| `MediaBox`, `/NewPage`, cursor moves (`/MoveTo`, `Td`) | Supported |
+| Text `(…) Tj` with fill color | Supported |
+| Fill/stroke colors (`rg`, `SC`) | Supported |
+| Rectangles (`re`, `f`, `S`) | Supported (cell-fill approximation) |
+| Links, alignment, rotation, images, form elements | Not supported (logged and skipped) |
+
+### Notes and Limitations (Numbers)
+- Rendering uses cell background fills to approximate shapes; advanced typography and images are not available in the Numbers AppleScript API.
+- The script expands the render table to 400×40 cells by default; adjust the `defaultRows`, `defaultCols`, and `cellSize` properties in the script if you need more space.
+- Commands not listed as supported are skipped and recorded in the **Automation Log** sheet.
 
 ## Rendering a Document
 1. In `01_Hex_Stream`, place one command per row starting at **row 2, column A**.
