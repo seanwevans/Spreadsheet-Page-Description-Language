@@ -5,6 +5,9 @@ function renderPDF() {
   const data = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1).getValues();
   const maxRows = 1000;
   const maxCols = 26;
+
+  const defaultHorizontalAlignment = renderSheet.getRange(1, 1).getHorizontalAlignment() || "left";
+  const defaultVerticalAlignment = renderSheet.getRange(1, 1).getVerticalAlignment() || "top";
   
   let currentX = 1;
   let currentY = 1;
@@ -19,6 +22,8 @@ function renderPDF() {
   let pageHeight = 0;
   let cellSize = 25;
   let defaultFontSize = 15;
+  let currentHorizontalAlignment = defaultHorizontalAlignment;
+  let currentVerticalAlignment = defaultVerticalAlignment;
 
   renderSheet.getRange(1, 1, maxRows, maxCols)
     .clear({contentsOnly: false, formatOnly: true})
@@ -153,16 +158,33 @@ function renderPDF() {
         let label = matches[1].replace(/[()]/g, "");
         let cell = renderSheet.getRange(currentY, currentX);
         cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontWeight(isBold).setFontStyle(isItalic);
+        cell.setFontWeight(isBold)
+            .setFontStyle(isItalic)
+            .setHorizontalAlignment(currentHorizontalAlignment)
+            .setVerticalAlignment(currentVerticalAlignment);
       }
     }
     if (command.includes("/Rotate")) {
        let parts = command.split(" ");
        currentRotation = parseInt(parts[0]);
     }
+    if (command.includes("/Align")) {
+      let parts = command.trim().split(/\s+/);
+      let alignDirective = parts[1];
+      if (alignDirective && alignDirective.startsWith("H")) {
+        if (alignDirective === "HCenter") currentHorizontalAlignment = "center";
+        if (alignDirective === "HRight") currentHorizontalAlignment = "right";
+        if (alignDirective === "HLeft") currentHorizontalAlignment = "left";
+      }
+      if (alignDirective && alignDirective.startsWith("V")) {
+        if (alignDirective === "VMiddle") currentVerticalAlignment = "middle";
+        if (alignDirective === "VBottom") currentVerticalAlignment = "bottom";
+        if (alignDirective === "VTop") currentVerticalAlignment = "top";
+      }
+    }
     if (command.includes("rg")) {
       let parts = command.split(" ");
-      currentColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255); 
+      currentColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
     }
     if (command.includes("Tf")) {
       isBold = command.includes("/F2") ? "bold" : "normal";
@@ -170,6 +192,22 @@ function renderPDF() {
     }
     if (command.includes("Tr")) {
       lineStyle = command.startsWith("1") ? "underline" : "none";
+    }
+    if (command.match(/\d+\s+TA/)) {
+      let match = command.match(/(\d+)\s+TA/);
+      if (match) {
+        let alignmentCode = parseInt(match[1]);
+        if (alignmentCode === 0) currentHorizontalAlignment = "left";
+        if (alignmentCode === 1) currentHorizontalAlignment = "center";
+        if (alignmentCode === 2) currentHorizontalAlignment = "right";
+        if (alignmentCode === 3) currentVerticalAlignment = "top";
+        if (alignmentCode === 4) currentVerticalAlignment = "middle";
+        if (alignmentCode === 5) currentVerticalAlignment = "bottom";
+        if (alignmentCode >= 6) {
+          currentHorizontalAlignment = defaultHorizontalAlignment;
+          currentVerticalAlignment = defaultVerticalAlignment;
+        }
+      }
     }
     if (command.includes("Td")) {
       let parts = command.split(" ");
@@ -194,11 +232,17 @@ function renderPDF() {
     }
     if (command.includes("Tj")) {
       let match = command.match(/\(([^)]+)\)/);
-      if (match) {
+        if (match) {
          if (currentY > 0 && currentX > 0) {
-           let cell = renderSheet.getRange(currentY, currentX); 
+           let cell = renderSheet.getRange(currentY, currentX);
            cell.setValue(match[1]);
-           cell.setFontColor(currentColor).setFontWeight(isBold).setFontStyle(isItalic).setFontLine(lineStyle).setTextRotation(currentRotation);
+           cell.setFontColor(currentColor)
+               .setFontWeight(isBold)
+               .setFontStyle(isItalic)
+               .setFontLine(lineStyle)
+               .setTextRotation(currentRotation)
+               .setHorizontalAlignment(currentHorizontalAlignment)
+               .setVerticalAlignment(currentVerticalAlignment);
          }
       }
     }
