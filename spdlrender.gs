@@ -27,6 +27,7 @@ function renderPDF() {
   let pageTopRow = 1;
   let pageWidth = 0;
   let pageHeight = 0;
+  let mediaBoxApplied = false;
   let cellSize = 25;
   let defaultFontSize = 15;
   let currentFontSize = defaultFontSize;
@@ -111,15 +112,28 @@ function renderPDF() {
     // --- PAGE SETUP ---
     if (command.includes("MediaBox")) {
       let parts = command.split(" ");
-      pageWidth = parseInt(parts[0]);
-      pageHeight = parseInt(parts[1]);
-      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+      let parsedWidth = parseInt(parts[0]);
+      let parsedHeight = parseInt(parts[1]);
+
+      if (parsedWidth > 0 && parsedHeight > 0) {
+        pageWidth = parsedWidth;
+        pageHeight = parsedHeight;
+        mediaBoxApplied = true;
+        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+      } else {
+        mediaBoxApplied = false;
+        Logger.log(`Ignoring MediaBox with invalid dimensions: ${command}`);
+      }
     }
     if (command.includes("/NewPage")) {
-      pageTopRow = pageTopRow + pageHeight + 2;
-      currentX = 1;
-      currentY = pageTopRow;
-      drawPage(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+      if (!mediaBoxApplied || pageWidth <= 0 || pageHeight <= 0) {
+        Logger.log("/NewPage encountered before MediaBox was applied; skipping page break.");
+      } else {
+        pageTopRow = pageTopRow + pageHeight + 2;
+        currentX = 1;
+        currentY = pageTopRow;
+        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+      }
     }
 
     // --- LINE WIDTH ---
@@ -269,11 +283,19 @@ function renderPDF() {
   }
 }
 
-function drawPage(sheet, topRow, width, height, borderStyle) {
-  let pageRange = sheet.getRange(topRow, 1, height, width);
-  pageRange.setBackground("white");
-  pageRange.setBorder(true, true, true, true, false, false, "black", borderStyle || mapLineWidth(3));
-}
+  function drawPage(sheet, topRow, width, height, borderStyle) {
+    let pageRange = sheet.getRange(topRow, 1, height, width);
+    pageRange.setBackground("white");
+    pageRange.setBorder(true, true, true, true, false, false, "black", borderStyle || mapLineWidth(3));
+  }
+
+  function drawPageIfValid(sheet, topRow, width, height, borderStyle) {
+    if (width > 0 && height > 0) {
+      drawPage(sheet, topRow, width, height, borderStyle);
+    } else {
+      Logger.log(`Skipping page draw due to non-positive dimensions: width=${width}, height=${height}`);
+    }
+  }
 
 function rgbToHex(r, g, b) {
   return "#" + ((1 << 24) + (Math.floor(r) << 16) + (Math.floor(g) << 8) + Math.floor(b)).toString(16).slice(1);
