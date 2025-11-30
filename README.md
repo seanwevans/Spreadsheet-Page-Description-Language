@@ -40,6 +40,17 @@ Paste this command stream into **Row 2, Column A** of `01_Hex_Stream`:
 /CheckBox             % Render Interactive Checkbox
 ```
 
+### 3. Independent Fill & Stroke Colors
+Use `rg` to set the fill color and `SC` to set the stroke color independently:
+
+```spdl
+0 0 1 rg      % Fill with Blue
+1 0 0 SC      % Stroke with Red
+10 10 4 2 re  % Rectangle path
+f             % Fill (blue)
+S             % Stroke (red)
+0 20 Td       % Move Down
+(Outlined Text) Tj  % Text uses the fill color
 ### 3. Positioning Commands
 
 - **`Td`**: Relative movement. Offsets the current cursor by the provided X/Y deltas (in tenths of a grid cell). Best for flowing text or incremental placement.

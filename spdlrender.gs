@@ -11,7 +11,8 @@ function renderPDF() {
   
   let currentX = 1;
   let currentY = 1;
-  let currentColor = "#000000";    
+  let currentFillColor = "#000000";
+  let currentStrokeColor = "#000000";
   let isBold = "normal";
   let isItalic = "normal";
   let lineStyle = "none";
@@ -133,8 +134,8 @@ function renderPDF() {
     if (command === "f" || command === "S") {
        if (currentPath.w > 0 && currentPath.h > 0) {
          let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
-         if (command === "f") range.setBackground(currentColor);
-         if (command === "S") range.setBorder(true, true, true, true, false, false, currentColor, currentLineWidth);
+         if (command === "f") range.setBackground(currentFillColor);
+         if (command === "S") range.setBorder(true, true, true, true, false, false, currentStrokeColor, SpreadsheetApp.BorderStyle.SOLID);
        }
     }
 
@@ -166,10 +167,8 @@ function renderPDF() {
         let label = matches[1].replace(/[()]/g, "");
         let cell = renderSheet.getRange(currentY, currentX);
         cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontWeight(isBold)
-            .setFontStyle(isItalic)
-            .setHorizontalAlignment(currentHorizontalAlignment)
-            .setVerticalAlignment(currentVerticalAlignment);
+        cell.setFontColor(currentFillColor).setFontWeight(isBold).setFontStyle(isItalic);
+        cell.setFontWeight(isBold).setFontStyle(isItalic).setHorizontalAlignment(currentHorizontalAlignment).setVerticalAlignment(currentVerticalAlignment);
       }
     }
     if (command.includes("/Rotate")) {
@@ -192,7 +191,14 @@ function renderPDF() {
     }
     if (command.includes("rg")) {
       let parts = command.split(" ");
-      currentColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
+      currentFillColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
+    }
+    if (/\bSC\b/.test(command)) {
+      let parts = command.trim().split(/\s+/);
+      let scIndex = parts.indexOf("SC");
+      if (scIndex >= 3) {
+        currentStrokeColor = rgbToHex(parts[scIndex-3]*255, parts[scIndex-2]*255, parts[scIndex-1]*255);
+      }
     }
     if (command.includes("Tf")) {
       isBold = command.includes("/F2") ? "bold" : "normal";
@@ -243,8 +249,8 @@ function renderPDF() {
         if (match) {
          if (currentY > 0 && currentX > 0) {
            let cell = renderSheet.getRange(currentY, currentX);
-           cell.setValue(match[1]);
-           cell.setFontColor(currentColor)
+           cell.setValue(match[1]);           
+           cell.setFontColor(currentFillColor)
                .setFontWeight(isBold)
                .setFontStyle(isItalic)
                .setFontLine(lineStyle)
