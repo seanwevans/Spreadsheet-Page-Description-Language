@@ -441,6 +441,10 @@ Private Function TryParseRotationOperand(ByVal command As String, ByRef rotation
             Exit Function
         End If
     Next i
+    
+    TryParseRotationOperand = False
+End Function
+
 Private Function IsExactOperator(ByVal command As String, ByVal expectedOperator As String) As Boolean
     IsExactOperator = (StrComp(Trim$(command), expectedOperator, vbBinaryCompare) = 0)
 End Function
