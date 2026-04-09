@@ -427,6 +427,8 @@ function mapLineWeight(widthValue: number): ExcelScript.BorderWeight {
   if (widthValue === 3) return ExcelScript.BorderWeight.thick;
   if (widthValue === 4) return ExcelScript.BorderWeight.thick;
   return ExcelScript.BorderWeight.thin;
+}
+
 function parseRotationOperand(command: string): number | null {
   const parts = command.trim().split(/\s+/);
   const rotateIndex = parts.indexOf("/Rotate");
