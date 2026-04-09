@@ -183,7 +183,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 ### Color and Stroke
 - `r g b rg` — Set **fill** color (0–1 floats scaled to 0–255).
 - `r g b SC` — Set **stroke** color independently.
-- `n w` — Set stroke width. Maps to Google Sheets border styles: 1=solid, 2=medium, 3=thick (default), 4=double.
+- `n w` — Set stroke width. Canonical mapping across all renderers: `1=thin`, `2=medium`, `3=thick` (default), `4=double`.
 
 ### Shapes and Paths
 - `x y w h re` — Define a rectangle path at page-relative position.

@@ -54,6 +54,7 @@ function main(workbook: ExcelScript.Workbook) {
   let currentFillColor = "#000000";
   let currentStrokeColor = "#000000";
   let currentLineWidth: ExcelScript.BorderLineStyle = mapLineWidth(3);
+  let currentLineWeight: ExcelScript.BorderWeight = mapLineWeight(3);
   let currentRotation = 0;
   let currentPath = { x: 0, y: 0, w: 0, h: 0 };
   let pageTopRow = 1;
@@ -118,7 +119,7 @@ function main(workbook: ExcelScript.Workbook) {
         format.getFill().setColor("#FFF2CC");
         format.setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
         format.setVerticalAlignment(ExcelScript.VerticalAlignment.center);
-        setBorder(range, currentStrokeColor, currentLineWidth);
+        setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
       }
       continue;
     }
@@ -132,7 +133,7 @@ function main(workbook: ExcelScript.Workbook) {
         pageWidth = parsedWidth;
         pageHeight = parsedHeight;
         mediaBoxApplied = true;
-        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth, currentLineWeight);
       } else {
         mediaBoxApplied = false;
         console.log(`Ignoring MediaBox with invalid dimensions: ${command}`);
@@ -147,7 +148,7 @@ function main(workbook: ExcelScript.Workbook) {
         pageTopRow = pageTopRow + pageHeight + 2;
         currentX = 1;
         currentY = pageTopRow;
-        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
+        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth, currentLineWeight);
       }
       continue;
     }
@@ -157,6 +158,7 @@ function main(workbook: ExcelScript.Workbook) {
     if (lineWidthMatch) {
       const widthValue = parseInt(lineWidthMatch[1], 10);
       currentLineWidth = mapLineWidth(widthValue);
+      currentLineWeight = mapLineWeight(widthValue);
       continue;
     }
 
@@ -176,8 +178,8 @@ function main(workbook: ExcelScript.Workbook) {
         if (isExactOperator(command, "f")) {
           range.getFormat().getFill().setColor(currentFillColor);
         }
-        if (isExactOperator(command, "S")) {
-          setBorder(range, currentStrokeColor, currentLineWidth);
+        if (command === "S") {
+          setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
         }
       }
       continue;
@@ -368,23 +370,39 @@ function getCell(sheet: ExcelScript.Worksheet, x: number, y: number): ExcelScrip
   return sheet.getRangeByIndexes(y - 1, x - 1, 1, 1);
 }
 
-function drawPageIfValid(sheet: ExcelScript.Worksheet, topRow: number, width: number, height: number, borderStyle: ExcelScript.BorderLineStyle) {
+function drawPageIfValid(
+  sheet: ExcelScript.Worksheet,
+  topRow: number,
+  width: number,
+  height: number,
+  borderStyle: ExcelScript.BorderLineStyle,
+  borderWeight: ExcelScript.BorderWeight
+) {
   if (width > 0 && height > 0) {
     const pageRange = sheet.getRangeByIndexes(topRow - 1, 0, height, width);
     pageRange.getFormat().getFill().setColor("white");
-    setBorder(pageRange, "black", borderStyle);
+    setBorder(pageRange, "black", borderStyle, borderWeight);
   }
 }
 
-function setBorder(range: ExcelScript.Range, color: string, style: ExcelScript.BorderLineStyle) {
+function setBorder(
+  range: ExcelScript.Range,
+  color: string,
+  style: ExcelScript.BorderLineStyle,
+  weight: ExcelScript.BorderWeight
+) {
   const borders = range.getFormat().getBorders();
   borders.getItem(ExcelScript.BorderIndex.edgeTop).setStyle(style);
+  borders.getItem(ExcelScript.BorderIndex.edgeTop).setWeight(weight);
   borders.getItem(ExcelScript.BorderIndex.edgeTop).setColor(color);
   borders.getItem(ExcelScript.BorderIndex.edgeBottom).setStyle(style);
+  borders.getItem(ExcelScript.BorderIndex.edgeBottom).setWeight(weight);
   borders.getItem(ExcelScript.BorderIndex.edgeBottom).setColor(color);
   borders.getItem(ExcelScript.BorderIndex.edgeLeft).setStyle(style);
+  borders.getItem(ExcelScript.BorderIndex.edgeLeft).setWeight(weight);
   borders.getItem(ExcelScript.BorderIndex.edgeLeft).setColor(color);
   borders.getItem(ExcelScript.BorderIndex.edgeRight).setStyle(style);
+  borders.getItem(ExcelScript.BorderIndex.edgeRight).setWeight(weight);
   borders.getItem(ExcelScript.BorderIndex.edgeRight).setColor(color);
 }
 
@@ -394,13 +412,21 @@ function rgbToHex(r: number, g: number, b: number): string {
 }
 
 function mapLineWidth(widthValue: number): ExcelScript.BorderLineStyle {
+  // Canonical SPDL stroke width mapping (shared across renderers):
+  // 1 = thin, 2 = medium, 3 = thick, 4 = double.
   if (widthValue === 1) return ExcelScript.BorderLineStyle.continuous;
   if (widthValue === 2) return ExcelScript.BorderLineStyle.continuous;
-  if (widthValue === 3) return ExcelScript.BorderLineStyle.double;
+  if (widthValue === 3) return ExcelScript.BorderLineStyle.continuous;
   if (widthValue === 4) return ExcelScript.BorderLineStyle.double;
   return ExcelScript.BorderLineStyle.continuous;
 }
 
+function mapLineWeight(widthValue: number): ExcelScript.BorderWeight {
+  if (widthValue === 1) return ExcelScript.BorderWeight.thin;
+  if (widthValue === 2) return ExcelScript.BorderWeight.medium;
+  if (widthValue === 3) return ExcelScript.BorderWeight.thick;
+  if (widthValue === 4) return ExcelScript.BorderWeight.thick;
+  return ExcelScript.BorderWeight.thin;
 function parseRotationOperand(command: string): number | null {
   const parts = command.trim().split(/\s+/);
   const rotateIndex = parts.indexOf("/Rotate");

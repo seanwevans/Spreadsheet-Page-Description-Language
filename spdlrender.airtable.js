@@ -87,10 +87,13 @@ async function clearTable(config, table) {
 }
 
 function mapLineWidth(width) {
+  // Canonical SPDL stroke width mapping (shared across renderers):
+  // 1 = thin, 2 = medium, 3 = thick, 4 = double.
   if (width <= 1) return "thin";
   if (width === 2) return "medium";
   if (width === 3) return "thick";
-  return "double";
+  if (width === 4) return "double";
+  return "thin";
 }
 
 function parseColor(parts) {
