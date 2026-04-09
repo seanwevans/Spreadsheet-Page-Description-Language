@@ -70,6 +70,7 @@ function main(workbook: ExcelScript.Workbook) {
   for (const rawCommand of commands) {
     const command = rawCommand.trim();
     if (!command) continue;
+    const bounds = getActiveBounds(mediaBoxApplied, pageTopRow, pageWidth, pageHeight, maxRows, maxCols);
 
     // --- IMAGE (InsertImage) ---
     if (command.includes("/InsertImage")) {
@@ -91,7 +92,9 @@ function main(workbook: ExcelScript.Workbook) {
     if (command.includes("/Note")) {
       const match = command.match(/\(([^)]+)\)/);
       if (match) {
-        const cell = getCell(renderSheet, currentX, currentY);
+        const targetCell = clampCellWrite(currentX, currentY, bounds, "/Note");
+        if (!targetCell) continue;
+        const cell = getCell(renderSheet, targetCell.x, targetCell.y);
         cell.addComment(match[1], "SPDL");
       }
       continue;
@@ -99,7 +102,9 @@ function main(workbook: ExcelScript.Workbook) {
 
     // --- ACROFORMS ---
     if (command.includes("/CheckBox")) {
-      const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 1);
+      const checkboxRect = clampRect(currentX, currentY, 1, 1, bounds, "/CheckBox");
+      if (!checkboxRect) continue;
+      const range = renderSheet.getRangeByIndexes(checkboxRect.y - 1, checkboxRect.x - 1, checkboxRect.h, checkboxRect.w);
       range.setValue("☐");
       range.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
       range.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
@@ -110,7 +115,9 @@ function main(workbook: ExcelScript.Workbook) {
       const match = command.match(/\(([^)]+)\)/);
       if (match) {
         const options = match[1].split(",").map(s => s.trim());
-        const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 6);
+        const dropdownRect = clampRect(currentX, currentY, 1, 6, bounds, "/Dropdown");
+        if (!dropdownRect) continue;
+        const range = renderSheet.getRangeByIndexes(dropdownRect.y - 1, dropdownRect.x - 1, dropdownRect.h, dropdownRect.w);
         range.merge();
         range.getDataValidation().setList(options);
         range.setValue(options[0]);
@@ -171,8 +178,9 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     if (command === "f" || command === "S") {
-      if (currentPath.w > 0 && currentPath.h > 0) {
-        const range = renderSheet.getRangeByIndexes(currentPath.y - 1, currentPath.x - 1, currentPath.h, currentPath.w);
+      const pathRect = clampRect(currentPath.x, currentPath.y, currentPath.h, currentPath.w, bounds, command === "f" ? "fill rect" : "stroke rect");
+      if (pathRect) {
+        const range = renderSheet.getRangeByIndexes(pathRect.y - 1, pathRect.x - 1, pathRect.h, pathRect.w);
         if (command === "f") {
           range.getFormat().getFill().setColor(currentFillColor);
         }
@@ -190,12 +198,16 @@ function main(workbook: ExcelScript.Workbook) {
       const height = parseInt(parts[1], 10);
       const pixelData = parts[3];
       if (pixelData && pixelData.length >= width * height) {
-        for (let r = 0; r < height; r++) {
-          for (let c = 0; c < width; c++) {
-            const colorCode = pixelData[(r * width) + c];
+        const pixelRect = clampRect(currentX, currentY, height, width, bounds, "pixel-art");
+        if (!pixelRect) continue;
+        for (let r = 0; r < pixelRect.h; r++) {
+          for (let c = 0; c < pixelRect.w; c++) {
+            const sourceRow = pixelRect.sourceRowOffset + r;
+            const sourceCol = pixelRect.sourceColOffset + c;
+            const colorCode = pixelData[(sourceRow * width) + sourceCol];
             const pixelColor = colorCode === '1' ? "#000000" : colorCode === '2' ? "#F1C40F" : colorCode === '3' ? "#E74C3C" : null;
             if (pixelColor) {
-              const cell = renderSheet.getRangeByIndexes(currentY + r - 1, currentX + c - 1, 1, 1);
+              const cell = renderSheet.getRangeByIndexes(pixelRect.y + r - 1, pixelRect.x + c - 1, 1, 1);
               cell.getFormat().getFill().setColor(pixelColor);
             }
           }
@@ -210,7 +222,9 @@ function main(workbook: ExcelScript.Workbook) {
       if (matches && matches.length >= 2) {
         const url = matches[0].replace(/[()]/g, "");
         const label = matches[1].replace(/[()]/g, "");
-        const cell = getCell(renderSheet, currentX, currentY);
+        const targetCell = clampCellWrite(currentX, currentY, bounds, "/Link");
+        if (!targetCell) continue;
+        const cell = getCell(renderSheet, targetCell.x, targetCell.y);
         cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
         applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
       }
@@ -315,7 +329,9 @@ function main(workbook: ExcelScript.Workbook) {
     if (command.includes("Tj")) {
       const match = command.match(/\(([^)]+)\)/);
       if (match) {
-        const cell = getCell(renderSheet, currentX, currentY);
+        const targetCell = clampCellWrite(currentX, currentY, bounds, "Tj");
+        if (!targetCell) continue;
+        const cell = getCell(renderSheet, targetCell.x, targetCell.y);
         cell.setValue(match[1]);
         applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
       }
@@ -339,6 +355,48 @@ function applyTextFormatting(cell: ExcelScript.Range, color: string, size: numbe
 
 function getCell(sheet: ExcelScript.Worksheet, x: number, y: number): ExcelScript.Range {
   return sheet.getRangeByIndexes(y - 1, x - 1, 1, 1);
+}
+
+function getActiveBounds(mediaBoxApplied: boolean, pageTopRow: number, pageWidth: number, pageHeight: number, maxRows: number, maxCols: number) {
+  if (mediaBoxApplied && pageWidth > 0 && pageHeight > 0) {
+    return { minX: 1, maxX: pageWidth, minY: pageTopRow, maxY: pageTopRow + pageHeight - 1, mode: "MediaBox" };
+  }
+  return { minX: 1, maxX: maxCols, minY: 1, maxY: maxRows, mode: "canvas" };
+}
+
+function clampCellWrite(x: number, y: number, bounds: { minX: number; maxX: number; minY: number; maxY: number; mode: string }, operationName: string) {
+  if (x < bounds.minX || x > bounds.maxX || y < bounds.minY || y > bounds.maxY) {
+    console.log(`Skipping ${operationName}: cell (${x}, ${y}) is outside ${bounds.mode} bounds [x:${bounds.minX}-${bounds.maxX}, y:${bounds.minY}-${bounds.maxY}]`);
+    return null;
+  }
+  return { x, y };
+}
+
+function clampRect(x: number, y: number, h: number, w: number, bounds: { minX: number; maxX: number; minY: number; maxY: number; mode: string }, operationName: string) {
+  if (h <= 0 || w <= 0) {
+    console.log(`Skipping ${operationName}: invalid range size h=${h}, w=${w}`);
+    return null;
+  }
+  const startX = x;
+  const startY = y;
+  const endX = x + w - 1;
+  const endY = y + h - 1;
+  const clampedStartX = Math.max(bounds.minX, startX);
+  const clampedStartY = Math.max(bounds.minY, startY);
+  const clampedEndX = Math.min(bounds.maxX, endX);
+  const clampedEndY = Math.min(bounds.maxY, endY);
+  if (clampedStartX > clampedEndX || clampedStartY > clampedEndY) {
+    console.log(`Skipping ${operationName}: range (${startX}, ${startY}, h=${h}, w=${w}) is outside ${bounds.mode} bounds [x:${bounds.minX}-${bounds.maxX}, y:${bounds.minY}-${bounds.maxY}]`);
+    return null;
+  }
+  return {
+    x: clampedStartX,
+    y: clampedStartY,
+    h: clampedEndY - clampedStartY + 1,
+    w: clampedEndX - clampedStartX + 1,
+    sourceRowOffset: clampedStartY - startY,
+    sourceColOffset: clampedStartX - startX
+  };
 }
 
 function drawPageIfValid(sheet: ExcelScript.Worksheet, topRow: number, width: number, height: number, borderStyle: ExcelScript.BorderLineStyle) {
