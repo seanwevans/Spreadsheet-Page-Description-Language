@@ -187,7 +187,7 @@ function renderPDF() {
         let label = matches[1].replace(/[()]/g, "");
         let cell = renderSheet.getRange(currentY, currentX);
         cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontColor(currentFillColor).setFontWeight(isBold).setFontStyle(isItalic);
+        cell.setFontColor(currentFillColor).setFontSize(currentFontSize).setFontWeight(isBold).setFontStyle(isItalic);
         cell.setFontWeight(isBold).setFontStyle(isItalic).setHorizontalAlignment(currentHorizontalAlignment).setVerticalAlignment(currentVerticalAlignment);
       }
     }
@@ -223,6 +223,15 @@ function renderPDF() {
     if (command.includes("Tf")) {
       isBold = command.includes("/F2") ? "bold" : "normal";
       isItalic = command.includes("/F3") ? "italic" : "normal";
+    }
+    if (/\bTs\b/.test(command)) {
+      let fontSizeMatch = command.match(/([+-]?\d*\.?\d+)\s+Ts\b/);
+      if (fontSizeMatch) {
+        let parsedFontSize = parseFloat(fontSizeMatch[1]);
+        currentFontSize = (!isNaN(parsedFontSize) && parsedFontSize > 0) ? parsedFontSize : defaultFontSize;
+      } else {
+        currentFontSize = defaultFontSize;
+      }
     }
     if (command.includes("Tr")) {
       lineStyle = command.startsWith("1") ? "underline" : "none";
@@ -271,6 +280,7 @@ function renderPDF() {
            let cell = renderSheet.getRange(currentY, currentX);
            cell.setValue(match[1]);           
            cell.setFontColor(currentFillColor)
+               .setFontSize(currentFontSize)
                .setFontWeight(isBold)
                .setFontStyle(isItalic)
                .setFontLine(lineStyle)
