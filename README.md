@@ -130,7 +130,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `W H MediaBox` — Define page width/height (in cells). Draws a white canvas with a border. Required before `/NewPage`.
 - `/NewPage` — Starts a new page below the previous one using the last `MediaBox` dimensions.
 - `/MoveTo X Y` — Move cursor to an absolute cell (1-based) relative to the current page’s top-left corner. Y is clamped to the page height.
-- `dx dy Td` — Move cursor **relatively** by deltas (tenths of a cell). `10 10 Td` moves one cell down/right.
+- `dx dy Td` — Move cursor **relatively** by deltas (tenths of a cell). Inputs are parsed as floating-point values, then converted with truncation toward zero (`trunc(dx/10)`, `trunc(dy/10)`) for consistent behavior across Google Apps Script, Office Scripts, and VBA. `10 10 Td` moves one cell down/right.
 
 ### Text and Typography
 - `(text) Tj` — Write text at the current cursor with active styling (fill color, weight, style, rotation, alignment).
