@@ -93,7 +93,7 @@ Apple Numbers does not offer as rich an API as Google Sheets or Office, but the 
 `spdlrender.airtable.js` lets you push SPDL streams into Airtable bases that expose REST APIs but lack native scripting. The renderer maps one record per cell in a grid-style table and uses `performUpsert` on `Row`+`Col` to avoid duplicates.
 
 ### Airtable table schema
-- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
+- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `ImageURL` (URL or single-line text), `ImageWidth` (number), `ImageHeight` (number), `Meta` (long text for JSON metadata), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
 - **01_Hex_Stream** (optional): store SPDL commands for reference. The script expects the stream locally (stdin/file); storing it in Airtable is for traceability only.
 
 ### Configuration
@@ -135,9 +135,22 @@ When `truncateTable` is enabled the script deletes existing records in batches o
 - `r g b rg` / `r g b SC` — maps to `Background`/`BorderColor` hex values.
 - `x y w h re` + `f` or `S` — fills or strokes rectangular regions by upserting individual cells.
 - `w h ID <data>` — basic pixel art using color codes 1–3.
-- `/CheckBox`, `(opt1,opt2) /Dropdown`, `(note) /Note`, `/InsertImage` — map to checkbox, single select, long text, and attachment fields respectively.
+- `/CheckBox`, `(opt1,opt2) /Dropdown`, `(note) /Note`, `/InsertImage` — map to checkbox, single select, long text, and attachment/image metadata fields respectively.
 
-Limitations: Airtable lacks cell merging/rotation at the API level; alignment is captured as metadata but visual layout depends on your interface. Image size metadata is stored in notes because Airtable attachments auto-size. Keep payloads modest (under a few thousand cells) to avoid rate limiting.
+Limitations: Airtable lacks cell merging/rotation at the API level; alignment is captured as metadata but visual layout depends on your interface. Attachment rendering still auto-sizes in Airtable views, but SPDL image dimensions are now stored explicitly in `ImageWidth` + `ImageHeight` (and optionally `Meta` JSON). Keep payloads modest (under a few thousand cells) to avoid rate limiting.
+
+### Airtable migration guidance (image fields)
+If your base previously relied on legacy `/InsertImage` behavior (writing image width into `StrokeWidth` and height hints into `Note`), migrate as follows:
+
+1. **Add new fields** to `02_Rendered_View`: `ImageURL` (URL or text), `ImageWidth` (number), `ImageHeight` (number), and optionally `Meta` (long text).
+2. **Keep `StrokeWidth` for borders only**. The Airtable renderer no longer writes image dimensions into `StrokeWidth`.
+3. **Backfill existing image rows** (optional but recommended):
+   - Copy URL-like values from `Value` or attachment URLs into `ImageURL`.
+   - Move numeric image widths from legacy `StrokeWidth` into `ImageWidth` where the row represents an image.
+   - Parse legacy `Note` text such as `Image height 120` into `ImageHeight`.
+4. **Compatibility strategy**:
+   - Existing formulas/automations that read image width from `StrokeWidth` should be updated to read `ImageWidth`.
+   - Existing formulas/automations that read image height from `Note` should be updated to read `ImageHeight` (or parse `Meta` JSON if you centralize metadata there).
 
 ## Rendering a Document
 1. In `01_Hex_Stream`, place one command per row starting at **row 2, column A**.

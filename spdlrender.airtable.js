@@ -13,7 +13,9 @@
  * (checkbox), Underline (checkbox), Link (url), Rotation (number), Alignment
  * (single select: HLeft, HCenter, HRight, VTop, VMiddle, VBottom), BorderColor
  * (hex), BorderStyle (string), StrokeWidth (number), Attachment (attachment),
- * Dropdown (single select), Checkbox (checkbox), Note (long text).
+ * ImageURL (url or text), ImageWidth (number), ImageHeight (number),
+ * Meta (long text/json), Dropdown (single select), Checkbox (checkbox),
+ * Note (long text).
  *
  * Authentication uses an Airtable personal access token with `Bearer` header.
  * Upserts leverage `performUpsert` on Row+Col to avoid duplicate records.
@@ -148,11 +150,21 @@ function parseSpdl(stream) {
       const parts = command.replace(match?.[0] || "", "").trim().split(/\s+/);
       const width = parseInt(parts[0], 10) || 0;
       const height = parseInt(parts[1], 10) || 0;
+      const imageUrl = match?.[1] || "";
       enqueueCell(state.cursorX, state.cursorY, {
-        Attachment: [{ url: match?.[1] }],
-        Value: match?.[1] || "",
-        StrokeWidth: width || undefined,
-        Note: height ? `Image height ${height}` : undefined,
+        Attachment: imageUrl ? [{ url: imageUrl }] : undefined,
+        Value: imageUrl,
+        ImageURL: imageUrl || undefined,
+        ImageWidth: width || undefined,
+        ImageHeight: height || undefined,
+        Meta: imageUrl
+          ? JSON.stringify({
+            type: "image",
+            url: imageUrl,
+            width,
+            height,
+          })
+          : undefined,
       });
       continue;
     }
