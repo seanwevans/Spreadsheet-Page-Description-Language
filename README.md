@@ -9,8 +9,14 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 ## Table of Contents
 - [Overview](#overview)
 - [How It Works](#how-it-works)
-- [Setup](#setup)
-- [Apple Numbers Renderer](#apple-numbers-renderer)
+- [Setup by Renderer](#setup-by-renderer)
+  - [Google Apps Script (Google Sheets)](#google-apps-script-google-sheets)
+  - [Office Scripts (Excel for the web)](#office-scripts-excel-for-the-web)
+  - [VBA (Excel desktop)](#vba-excel-desktop)
+  - [AppleScript (Apple Numbers on macOS)](#applescript-apple-numbers-on-macos)
+  - [Airtable (REST API + Node.js)](#airtable-rest-api--nodejs)
+- [AppleScript Renderer Notes (Numbers)](#applescript-renderer-notes-numbers)
+- [Airtable Renderer (API-backed)](#airtable-renderer-api-backed)
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
 - [Examples](#examples)
@@ -27,26 +33,46 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 3. Pages are defined with `MediaBox` and optionally chained with `/NewPage`. The renderer draws the page boundary and tracks the top row for subsequent page-relative commands.
 4. At the end of the stream, the render sheet shows the fully composed layout.
 
-## Setup
-1. Create a new Google Sheet with two sheets named exactly:
-   - `01_Hex_Stream`
-   - `02_Rendered_View`
-2. Choose a renderer implementation:
-   - **Google Sheets**: Open **Extensions → Apps Script** and paste [`spdlrender.gs`](spdlrender.gs) into the editor.
-   - **Excel for the web (Office Scripts)**: Open **Automate → New Script** and paste [`spdlrender.office.ts`](spdlrender.office.ts) into the editor.
-   - **Excel desktop (VBA)**: Open the VBA editor (**Alt+F11**), add a new module, and paste [`spdlrender.vba`](spdlrender.vba).
-   - **Apple Numbers (AppleScript/Shortcuts)**: On macOS, open **Script Editor** or the **Shortcuts** app and paste [`spdlrender.numbers.applescript`](spdlrender.numbers.applescript). The script reads the `01_Hex_Stream` sheet and renders into `02_Rendered_View`.
-3. Save the project and grant permissions to the script when prompted.
-4. (Optional) Adjust the `maxRows`, `maxCols`, or `cellSize` constants if you need a different canvas size.
+## Setup by Renderer
 
-## Apple Numbers Renderer
+### Google Apps Script (Google Sheets)
+1. **Prerequisites**: Create a Google Sheet with two tabs named exactly `01_Hex_Stream` and `02_Rendered_View`.
+2. Open **Extensions → Apps Script** and paste [`spdlrender.gs`](spdlrender.gs) into the editor.
+3. Save the Apps Script project.
+4. Run `renderPDF()` and grant Google permissions when prompted.
+5. (Optional) Adjust `maxRows`, `maxCols`, or `cellSize` in the script if you need a different canvas size.
+
+### Office Scripts (Excel for the web)
+1. **Prerequisites**: Create an Excel workbook (web) with worksheets named `01_Hex_Stream` and `02_Rendered_View`.
+2. Open **Automate → New Script** and paste [`spdlrender.office.ts`](spdlrender.office.ts).
+3. Save the script.
+4. Run the script from **Automate** to render the stream.
+
+### VBA (Excel desktop)
+1. **Prerequisites**: Create an Excel desktop workbook with worksheets named `01_Hex_Stream` and `02_Rendered_View`.
+2. Open the VBA editor (**Alt+F11**), insert a module, and paste [`spdlrender.vba`](spdlrender.vba).
+3. Save as a macro-enabled workbook (`.xlsm`).
+4. Run the renderer macro from Excel (**Developer → Macros**) to render the stream.
+
+### AppleScript (Apple Numbers on macOS)
+1. **Prerequisites**: Open a Numbers workbook that contains `01_Hex_Stream` and `02_Rendered_View` as the first tables on each sheet.
+2. Open **Script Editor** (or **Shortcuts → New Shortcut → Run AppleScript**) and paste [`spdlrender.numbers.applescript`](spdlrender.numbers.applescript).
+3. On first run, approve **Automation** access so the script can control Numbers.
+4. Run the script with the workbook frontmost; rendering progress and unsupported commands are logged to **Automation Log**.
+
+### Airtable (REST API + Node.js)
+1. **Prerequisites**: Install Node.js 18+ and create an Airtable base with the schema described in [Airtable table schema](#airtable-table-schema).
+2. Copy and edit [`spdlrender.airtable.config.json`](spdlrender.airtable.config.json) with your `apiToken`, `baseId`, `renderTable`, and `streamPath`.
+3. Run:
+
+```bash
+node spdlrender.airtable.js spdlrender.airtable.config.json
+```
+
+4. Confirm records are upserted into your `02_Rendered_View` Airtable table.
+
+## AppleScript Renderer Notes (Numbers)
 Apple Numbers does not offer as rich an API as Google Sheets or Office, but the included AppleScript provides a native option for macOS users to preview SPDL layouts.
-
-### Setup (macOS)
-1. Open the Numbers workbook that contains `01_Hex_Stream` and `02_Rendered_View` as the first tables on each sheet.
-2. Open **Script Editor** (or **Shortcuts** → **New Shortcut → Run AppleScript**) and paste the contents of [`spdlrender.numbers.applescript`](spdlrender.numbers.applescript).
-3. The first run will prompt for **Automation** access so the script can control Numbers; approve the request.
-4. Run the script while the workbook is frontmost. Progress and unsupported commands are logged to a sheet named **Automation Log**.
 
 ### Feature Support Matrix (AppleScript renderer)
 | SPDL feature | Status |
@@ -61,9 +87,6 @@ Apple Numbers does not offer as rich an API as Google Sheets or Office, but the 
 - Rendering uses cell background fills to approximate shapes; advanced typography and images are not available in the Numbers AppleScript API.
 - The script expands the render table to 400×40 cells by default; adjust the `defaultRows`, `defaultCols`, and `cellSize` properties in the script if you need more space.
 - Commands not listed as supported are skipped and recorded in the **Automation Log** sheet.
-   - **Airtable (REST API)**: Use [`spdlrender.airtable.js`](spdlrender.airtable.js) with Node.js ≥18 and an Airtable personal access token to render into Airtable grids.
-3. Save the project and grant permissions to the script when prompted.
-4. (Optional) Adjust the `maxRows`, `maxCols`, or `cellSize` constants if you need a different canvas size.
 
 ## Airtable Renderer (API-backed)
 
