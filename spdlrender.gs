@@ -192,8 +192,10 @@ function renderPDF() {
       }
     }
     if (command.includes("/Rotate")) {
-       let parts = command.split(" ");
-       currentRotation = parseInt(parts[0]);
+      const rotationCandidate = parseRotationOperand(command);
+      if (rotationCandidate !== null) {
+        currentRotation = rotationCandidate;
+      }
     }
     if (command.includes("/Align")) {
       let parts = command.trim().split(/\s+/);
@@ -342,4 +344,21 @@ function mapLineWidth(widthValue) {
   if (widthValue === 3) return SpreadsheetApp.BorderStyle.SOLID_THICK;
   if (widthValue === 4) return SpreadsheetApp.BorderStyle.DOUBLE;
   return SpreadsheetApp.BorderStyle.SOLID;
+}
+
+function parseRotationOperand(command) {
+  const parts = command.trim().split(/\s+/);
+  const rotateIndex = parts.indexOf("/Rotate");
+  if (rotateIndex < 0) return null;
+
+  const candidates = [];
+  if (rotateIndex + 1 < parts.length) candidates.push(parts[rotateIndex + 1]);
+  if (rotateIndex - 1 >= 0) candidates.push(parts[rotateIndex - 1]);
+
+  for (let i = 0; i < candidates.length; i++) {
+    const value = Number(candidates[i]);
+    if (Number.isFinite(value)) return Math.trunc(value);
+  }
+
+  return null;
 }

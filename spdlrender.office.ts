@@ -218,8 +218,10 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     if (command.includes("/Rotate")) {
-      const parts = command.split(/\s+/);
-      currentRotation = parseInt(parts[0], 10);
+      const rotationCandidate = parseRotationOperand(command);
+      if (rotationCandidate !== null) {
+        currentRotation = rotationCandidate;
+      }
       continue;
     }
 
@@ -397,4 +399,21 @@ function mapLineWidth(widthValue: number): ExcelScript.BorderLineStyle {
   if (widthValue === 3) return ExcelScript.BorderLineStyle.double;
   if (widthValue === 4) return ExcelScript.BorderLineStyle.double;
   return ExcelScript.BorderLineStyle.continuous;
+}
+
+function parseRotationOperand(command: string): number | null {
+  const parts = command.trim().split(/\s+/);
+  const rotateIndex = parts.indexOf("/Rotate");
+  if (rotateIndex < 0) return null;
+
+  const candidates: string[] = [];
+  if (rotateIndex + 1 < parts.length) candidates.push(parts[rotateIndex + 1]);
+  if (rotateIndex - 1 >= 0) candidates.push(parts[rotateIndex - 1]);
+
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value)) return Math.trunc(value);
+  }
+
+  return null;
 }
