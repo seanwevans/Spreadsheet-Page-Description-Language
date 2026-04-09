@@ -404,6 +404,8 @@ Private Function MapLineWeight(ByVal widthValue As Long) As XlBorderWeight
         Case 4: MapLineWeight = xlThick
         Case Else: MapLineWeight = xlThin
     End Select
+End Function
+
 Private Function TryParseRotationOperand(ByVal command As String, ByRef rotationValue As Long) As Boolean
     Dim parts() As String
     parts = Split(Trim$(command))
