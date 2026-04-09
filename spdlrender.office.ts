@@ -141,7 +141,7 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    if (command.includes("/NewPage")) {
+    if (isExactOperator(command, "/NewPage")) {
       if (!mediaBoxApplied || pageWidth <= 0 || pageHeight <= 0) {
         console.log("/NewPage encountered before MediaBox was applied; skipping page break.");
       } else {
@@ -163,19 +163,19 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     // --- SHAPES ---
-    if (command.includes("re")) {
-      const parts = command.split(/\s+/);
-      currentPath.x = Math.floor(parseInt(parts[0], 10));
-      currentPath.y = pageTopRow + Math.floor(parseInt(parts[1], 10));
-      currentPath.w = Math.floor(parseInt(parts[2], 10));
-      currentPath.h = Math.floor(parseInt(parts[3], 10));
+    const rectanglePath = parseRectangleCommand(command);
+    if (rectanglePath) {
+      currentPath.x = rectanglePath.x;
+      currentPath.y = pageTopRow + rectanglePath.y;
+      currentPath.w = rectanglePath.w;
+      currentPath.h = rectanglePath.h;
       continue;
     }
 
-    if (command === "f" || command === "S") {
+    if (isExactOperator(command, "f") || isExactOperator(command, "S")) {
       if (currentPath.w > 0 && currentPath.h > 0) {
         const range = renderSheet.getRangeByIndexes(currentPath.y - 1, currentPath.x - 1, currentPath.h, currentPath.w);
-        if (command === "f") {
+        if (isExactOperator(command, "f")) {
           range.getFormat().getFill().setColor(currentFillColor);
         }
         if (command === "S") {
@@ -220,8 +220,10 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     if (command.includes("/Rotate")) {
-      const parts = command.split(/\s+/);
-      currentRotation = parseInt(parts[0], 10);
+      const rotationCandidate = parseRotationOperand(command);
+      if (rotationCandidate !== null) {
+        currentRotation = rotationCandidate;
+      }
       continue;
     }
 
@@ -293,9 +295,13 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     if (command.includes("Td")) {
-      const parts = command.split(/\s+/);
-      currentX += Math.floor(parseInt(parts[0], 10) / 10);
-      currentY += Math.floor(parseInt(parts[1], 10) / 10);
+      const parts = command.trim().split(/\s+/);
+      const deltaX = parseFloat(parts[0]);
+      const deltaY = parseFloat(parts[1]);
+      if (!isNaN(deltaX) && !isNaN(deltaY)) {
+        currentX += Math.trunc(deltaX / 10);
+        currentY += Math.trunc(deltaY / 10);
+      }
       continue;
     }
 
@@ -314,16 +320,37 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    if (command.includes("Tj")) {
-      const match = command.match(/\(([^)]+)\)/);
-      if (match) {
+    const textValue = parseTextCommand(command);
+    if (textValue !== null) {
         const cell = getCell(renderSheet, currentX, currentY);
-        cell.setValue(match[1]);
+        cell.setValue(textValue);
         applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
-      }
       continue;
     }
   }
+}
+
+const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
+const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
+
+function isExactOperator(command: string, operator: string): boolean {
+  return command === operator;
+}
+
+function parseRectangleCommand(command: string): { x: number; y: number; w: number; h: number } | null {
+  if (!RECTANGLE_COMMAND_PATTERN.test(command)) return null;
+  const parts = command.trim().split(/\s+/);
+  return {
+    x: Math.floor(parseFloat(parts[0])),
+    y: Math.floor(parseFloat(parts[1])),
+    w: Math.floor(parseFloat(parts[2])),
+    h: Math.floor(parseFloat(parts[3]))
+  };
+}
+
+function parseTextCommand(command: string): string | null {
+  const textMatch = command.match(TEXT_COMMAND_PATTERN);
+  return textMatch ? textMatch[1] : null;
 }
 
 function applyTextFormatting(cell: ExcelScript.Range, color: string, size: number, bold: boolean, italic: boolean, underline: boolean, rotation: number, hAlign: ExcelScript.HorizontalAlignment, vAlign: ExcelScript.VerticalAlignment) {
@@ -400,4 +427,19 @@ function mapLineWeight(widthValue: number): ExcelScript.BorderWeight {
   if (widthValue === 3) return ExcelScript.BorderWeight.thick;
   if (widthValue === 4) return ExcelScript.BorderWeight.thick;
   return ExcelScript.BorderWeight.thin;
+function parseRotationOperand(command: string): number | null {
+  const parts = command.trim().split(/\s+/);
+  const rotateIndex = parts.indexOf("/Rotate");
+  if (rotateIndex < 0) return null;
+
+  const candidates: string[] = [];
+  if (rotateIndex + 1 < parts.length) candidates.push(parts[rotateIndex + 1]);
+  if (rotateIndex - 1 >= 0) candidates.push(parts[rotateIndex - 1]);
+
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value)) return Math.trunc(value);
+  }
+
+  return null;
 }

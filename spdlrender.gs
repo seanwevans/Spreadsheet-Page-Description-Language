@@ -125,7 +125,7 @@ function renderPDF() {
         Logger.log(`Ignoring MediaBox with invalid dimensions: ${command}`);
       }
     }
-    if (command.includes("/NewPage")) {
+    if (isExactOperator(command, "/NewPage")) {
       if (!mediaBoxApplied || pageWidth <= 0 || pageHeight <= 0) {
         Logger.log("/NewPage encountered before MediaBox was applied; skipping page break.");
       } else {
@@ -144,18 +144,18 @@ function renderPDF() {
     }
 
     // --- SHAPES ---
-    if (command.includes("re")) {
-      let parts = command.split(" ");
-      currentPath.x = Math.floor(parseInt(parts[0])); 
-      currentPath.y = pageTopRow + Math.floor(parseInt(parts[1])); 
-      currentPath.w = Math.floor(parseInt(parts[2]));
-      currentPath.h = Math.floor(parseInt(parts[3]));
+    const rectanglePath = parseRectangleCommand(command);
+    if (rectanglePath) {
+      currentPath.x = rectanglePath.x;
+      currentPath.y = pageTopRow + rectanglePath.y;
+      currentPath.w = rectanglePath.w;
+      currentPath.h = rectanglePath.h;
     }
-    if (command === "f" || command === "S") {
+    if (isExactOperator(command, "f") || isExactOperator(command, "S")) {
        if (currentPath.w > 0 && currentPath.h > 0) {
          let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
-         if (command === "f") range.setBackground(currentFillColor);
-         if (command === "S") range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
+         if (isExactOperator(command, "f")) range.setBackground(currentFillColor);
+         if (isExactOperator(command, "S")) range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
        }
     }
 
@@ -187,13 +187,15 @@ function renderPDF() {
         let label = matches[1].replace(/[()]/g, "");
         let cell = renderSheet.getRange(currentY, currentX);
         cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontColor(currentFillColor).setFontWeight(isBold).setFontStyle(isItalic);
+        cell.setFontColor(currentFillColor).setFontSize(currentFontSize).setFontWeight(isBold).setFontStyle(isItalic);
         cell.setFontWeight(isBold).setFontStyle(isItalic).setHorizontalAlignment(currentHorizontalAlignment).setVerticalAlignment(currentVerticalAlignment);
       }
     }
     if (command.includes("/Rotate")) {
-       let parts = command.split(" ");
-       currentRotation = parseInt(parts[0]);
+      const rotationCandidate = parseRotationOperand(command);
+      if (rotationCandidate !== null) {
+        currentRotation = rotationCandidate;
+      }
     }
     if (command.includes("/Align")) {
       let parts = command.trim().split(/\s+/);
@@ -224,6 +226,15 @@ function renderPDF() {
       isBold = command.includes("/F2") ? "bold" : "normal";
       isItalic = command.includes("/F3") ? "italic" : "normal";
     }
+    if (/\bTs\b/.test(command)) {
+      let fontSizeMatch = command.match(/([+-]?\d*\.?\d+)\s+Ts\b/);
+      if (fontSizeMatch) {
+        let parsedFontSize = parseFloat(fontSizeMatch[1]);
+        currentFontSize = (!isNaN(parsedFontSize) && parsedFontSize > 0) ? parsedFontSize : defaultFontSize;
+      } else {
+        currentFontSize = defaultFontSize;
+      }
+    }
     if (command.includes("Tr")) {
       lineStyle = command.startsWith("1") ? "underline" : "none";
     }
@@ -244,9 +255,13 @@ function renderPDF() {
       }
     }
     if (command.includes("Td")) {
-      let parts = command.split(" ");
-      currentX += Math.floor(parseInt(parts[0]) / 10);
-      currentY += Math.floor(parseInt(parts[1]) / 10);
+      let parts = command.trim().split(/\s+/);
+      let deltaX = parseFloat(parts[0]);
+      let deltaY = parseFloat(parts[1]);
+      if (!isNaN(deltaX) && !isNaN(deltaY)) {
+        currentX += Math.trunc(deltaX / 10);
+        currentY += Math.trunc(deltaY / 10);
+      }
     }
     if (command.includes("/MoveTo")) {
       let parts = command.split(" ");
@@ -264,13 +279,13 @@ function renderPDF() {
         currentY = targetY;
       }
     }
-    if (command.includes("Tj")) {
-      let match = command.match(/\(([^)]+)\)/);
-        if (match) {
+    const textValue = parseTextCommand(command);
+    if (textValue !== null) {
          if (currentY > 0 && currentX > 0) {
            let cell = renderSheet.getRange(currentY, currentX);
-           cell.setValue(match[1]);           
+           cell.setValue(textValue);
            cell.setFontColor(currentFillColor)
+               .setFontSize(currentFontSize)
                .setFontWeight(isBold)
                .setFontStyle(isItalic)
                .setFontLine(lineStyle)
@@ -278,9 +293,31 @@ function renderPDF() {
                .setHorizontalAlignment(currentHorizontalAlignment)
                .setVerticalAlignment(currentVerticalAlignment);
          }
-      }
     }
   }
+}
+
+const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
+const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
+
+function isExactOperator(command, operator) {
+  return command === operator;
+}
+
+function parseRectangleCommand(command) {
+  if (!RECTANGLE_COMMAND_PATTERN.test(command)) return null;
+  const parts = command.trim().split(/\s+/);
+  return {
+    x: Math.floor(parseFloat(parts[0])),
+    y: Math.floor(parseFloat(parts[1])),
+    w: Math.floor(parseFloat(parts[2])),
+    h: Math.floor(parseFloat(parts[3]))
+  };
+}
+
+function parseTextCommand(command) {
+  const textMatch = command.match(TEXT_COMMAND_PATTERN);
+  return textMatch ? textMatch[1] : null;
 }
 
   function drawPage(sheet, topRow, width, height, borderStyle) {
@@ -309,4 +346,21 @@ function mapLineWidth(widthValue) {
   if (widthValue === 3) return SpreadsheetApp.BorderStyle.SOLID_THICK;
   if (widthValue === 4) return SpreadsheetApp.BorderStyle.DOUBLE;
   return SpreadsheetApp.BorderStyle.SOLID;
+}
+
+function parseRotationOperand(command) {
+  const parts = command.trim().split(/\s+/);
+  const rotateIndex = parts.indexOf("/Rotate");
+  if (rotateIndex < 0) return null;
+
+  const candidates = [];
+  if (rotateIndex + 1 < parts.length) candidates.push(parts[rotateIndex + 1]);
+  if (rotateIndex - 1 >= 0) candidates.push(parts[rotateIndex - 1]);
+
+  for (let i = 0; i < candidates.length; i++) {
+    const value = Number(candidates[i]);
+    if (Number.isFinite(value)) return Math.trunc(value);
+  }
+
+  return null;
 }
