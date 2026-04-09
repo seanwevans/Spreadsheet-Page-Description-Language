@@ -345,8 +345,26 @@ function parseSpdl(stream) {
 
     if (command.startsWith("/MoveTo")) {
       const parts = command.split(/\s+/);
-      state.cursorX = parseInt(parts[1], 10);
-      state.cursorY = state.pageTop + Math.min(state.pageHeight || Number.MAX_SAFE_INTEGER, parseInt(parts[2], 10));
+      let targetX = parseInt(parts[1], 10);
+      let targetY = parseInt(parts[2], 10);
+      if (!Number.isNaN(targetX) && !Number.isNaN(targetY)) {
+        if (state.pageWidth > 0) {
+          targetX = Math.max(1, Math.min(state.pageWidth, targetX));
+        } else {
+          targetX = Math.max(1, targetX);
+        }
+
+        const rawY = state.pageTop + targetY - 1;
+        if (state.pageHeight > 0) {
+          const pageBottom = state.pageTop + state.pageHeight - 1;
+          targetY = Math.max(state.pageTop, Math.min(pageBottom, rawY));
+        } else {
+          targetY = Math.max(state.pageTop, rawY);
+        }
+
+        state.cursorX = targetX;
+        state.cursorY = targetY;
+      }
       continue;
     }
 
@@ -415,7 +433,13 @@ async function main() {
   console.log(`Rendered ${records.length} cell updates to ${config.renderTable}`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  parseSpdl,
+};
