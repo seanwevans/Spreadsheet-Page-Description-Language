@@ -237,8 +237,11 @@ Public Sub RenderSPDL()
         End If
 
         If InStr(command, "/Rotate") > 0 Then
-            currentRotation = CInt(Split(command)(0))
-            renderSheet.Cells(currentY, currentX).Orientation = currentRotation
+            Dim parsedRotation As Long
+            If TryParseRotationOperand(command, parsedRotation) Then
+                currentRotation = parsedRotation
+                renderSheet.Cells(currentY, currentX).Orientation = currentRotation
+            End If
             GoTo NextCommand
         End If
 
@@ -387,4 +390,43 @@ Private Function MapLineWidth(ByVal widthValue As Long) As XlLineStyle
         Case 4: MapLineWidth = xlDouble
         Case Else: MapLineWidth = xlContinuous
     End Select
+End Function
+
+Private Function TryParseRotationOperand(ByVal command As String, ByRef rotationValue As Long) As Boolean
+    Dim parts() As String
+    parts = Split(Trim$(command))
+
+    Dim rotateIndex As Long
+    rotateIndex = -1
+
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        If parts(i) = "/Rotate" Then
+            rotateIndex = i
+            Exit For
+        End If
+    Next i
+
+    If rotateIndex = -1 Then Exit Function
+
+    Dim candidates(1 To 2) As String
+    Dim candidateCount As Long
+    candidateCount = 0
+
+    If rotateIndex + 1 <= UBound(parts) Then
+        candidateCount = candidateCount + 1
+        candidates(candidateCount) = parts(rotateIndex + 1)
+    End If
+    If rotateIndex - 1 >= LBound(parts) Then
+        candidateCount = candidateCount + 1
+        candidates(candidateCount) = parts(rotateIndex - 1)
+    End If
+
+    For i = 1 To candidateCount
+        If IsNumeric(candidates(i)) Then
+            rotationValue = CLng(CDbl(candidates(i)))
+            TryParseRotationOperand = True
+            Exit Function
+        End If
+    Next i
 End Function
