@@ -66,6 +66,7 @@ function main(workbook: ExcelScript.Workbook) {
   let isBold = false;
   let isItalic = false;
   let underline = false;
+  const pendingTextOps: TextOp[] = [];
 
   for (const rawCommand of commands) {
     const command = rawCommand.trim();
@@ -175,8 +176,7 @@ function main(workbook: ExcelScript.Workbook) {
         const range = renderSheet.getRangeByIndexes(currentPath.y - 1, currentPath.x - 1, currentPath.h, currentPath.w);
         if (command === "f") {
           range.getFormat().getFill().setColor(currentFillColor);
-        }
-        if (command === "S") {
+        } else {
           setBorder(range, currentStrokeColor, currentLineWidth);
         }
       }
@@ -190,16 +190,18 @@ function main(workbook: ExcelScript.Workbook) {
       const height = parseInt(parts[1], 10);
       const pixelData = parts[3];
       if (pixelData && pixelData.length >= width * height) {
+        const pixelRange = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, height, width);
+        const pixelProperties: ExcelScript.SettableCellProperties[][] = [];
         for (let r = 0; r < height; r++) {
+          const rowProperties: ExcelScript.SettableCellProperties[] = [];
           for (let c = 0; c < width; c++) {
             const colorCode = pixelData[(r * width) + c];
             const pixelColor = colorCode === '1' ? "#000000" : colorCode === '2' ? "#F1C40F" : colorCode === '3' ? "#E74C3C" : null;
-            if (pixelColor) {
-              const cell = renderSheet.getRangeByIndexes(currentY + r - 1, currentX + c - 1, 1, 1);
-              cell.getFormat().getFill().setColor(pixelColor);
-            }
+            rowProperties.push(pixelColor ? { format: { fill: { color: pixelColor } } } : {});
           }
+          pixelProperties.push(rowProperties);
         }
+        pixelRange.setCellProperties(pixelProperties);
       }
       continue;
     }
@@ -210,9 +212,22 @@ function main(workbook: ExcelScript.Workbook) {
       if (matches && matches.length >= 2) {
         const url = matches[0].replace(/[()]/g, "");
         const label = matches[1].replace(/[()]/g, "");
-        const cell = getCell(renderSheet, currentX, currentY);
-        cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
+        pendingTextOps.push({
+          row: currentY,
+          col: currentX,
+          value: `=HYPERLINK("${url}", "${label}")`,
+          isFormula: true,
+          style: {
+            color: currentFillColor,
+            size: currentFontSize,
+            bold: isBold,
+            italic: isItalic,
+            underline,
+            rotation: currentRotation,
+            hAlign: currentHorizontalAlignment,
+            vAlign: currentVerticalAlignment
+          }
+        });
       }
       continue;
     }
@@ -315,30 +330,121 @@ function main(workbook: ExcelScript.Workbook) {
     if (command.includes("Tj")) {
       const match = command.match(/\(([^)]+)\)/);
       if (match) {
-        const cell = getCell(renderSheet, currentX, currentY);
-        cell.setValue(match[1]);
-        applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
+        pendingTextOps.push({
+          row: currentY,
+          col: currentX,
+          value: match[1],
+          isFormula: false,
+          style: {
+            color: currentFillColor,
+            size: currentFontSize,
+            bold: isBold,
+            italic: isItalic,
+            underline,
+            rotation: currentRotation,
+            hAlign: currentHorizontalAlignment,
+            vAlign: currentVerticalAlignment
+          }
+        });
       }
       continue;
     }
   }
-}
 
-function applyTextFormatting(cell: ExcelScript.Range, color: string, size: number, bold: boolean, italic: boolean, underline: boolean, rotation: number, hAlign: ExcelScript.HorizontalAlignment, vAlign: ExcelScript.VerticalAlignment) {
-  const format = cell.getFormat();
-  const font = format.getFont();
-  font.setColor(color);
-  font.setSize(size);
-  font.setBold(bold);
-  font.setItalic(italic);
-  font.setUnderline(underline ? ExcelScript.RangeUnderlineStyle.single : ExcelScript.RangeUnderlineStyle.none);
-  format.setTextOrientation(rotation);
-  format.setHorizontalAlignment(hAlign);
-  format.setVerticalAlignment(vAlign);
+  flushPendingTextOps(renderSheet, pendingTextOps);
 }
 
 function getCell(sheet: ExcelScript.Worksheet, x: number, y: number): ExcelScript.Range {
   return sheet.getRangeByIndexes(y - 1, x - 1, 1, 1);
+}
+
+type TextStyle = {
+  color: string;
+  size: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  rotation: number;
+  hAlign: ExcelScript.HorizontalAlignment;
+  vAlign: ExcelScript.VerticalAlignment;
+};
+
+type TextOp = {
+  row: number;
+  col: number;
+  value: string;
+  isFormula: boolean;
+  style: TextStyle;
+};
+
+function flushPendingTextOps(sheet: ExcelScript.Worksheet, textOps: TextOp[]) {
+  if (!textOps.length) return;
+
+  const sorted = [...textOps].sort((a, b) => (a.row - b.row) || (a.col - b.col));
+  let i = 0;
+  while (i < sorted.length) {
+    const base = sorted[i];
+    const row = base.row;
+    const startCol = base.col;
+    const isFormula = base.isFormula;
+    const values: (string | number | boolean)[] = [base.value];
+    let endCol = startCol;
+    i++;
+    while (i < sorted.length && sorted[i].row === row && sorted[i].col === endCol + 1 && sorted[i].isFormula === isFormula) {
+      values.push(sorted[i].value);
+      endCol = sorted[i].col;
+      i++;
+    }
+    const range = sheet.getRangeByIndexes(row - 1, startCol - 1, 1, values.length);
+    if (isFormula) {
+      range.setFormulas([values.map(v => String(v))]);
+    } else {
+      range.setValues([values]);
+    }
+  }
+
+  const styleMap: Record<string, { style: TextStyle; addresses: string[] }> = {};
+  for (const op of sorted) {
+    const key = [
+      op.style.color,
+      op.style.size,
+      op.style.bold,
+      op.style.italic,
+      op.style.underline,
+      op.style.rotation,
+      op.style.hAlign,
+      op.style.vAlign
+    ].join("|");
+    if (!styleMap[key]) {
+      styleMap[key] = { style: op.style, addresses: [] };
+    }
+    styleMap[key].addresses.push(toA1(op.row, op.col));
+  }
+
+  Object.values(styleMap).forEach(entry => {
+    const areas = sheet.getRanges(entry.addresses.join(","));
+    const format = areas.getFormat();
+    const font = format.getFont();
+    font.setColor(entry.style.color);
+    font.setSize(entry.style.size);
+    font.setBold(entry.style.bold);
+    font.setItalic(entry.style.italic);
+    font.setUnderline(entry.style.underline ? ExcelScript.RangeUnderlineStyle.single : ExcelScript.RangeUnderlineStyle.none);
+    format.setTextOrientation(entry.style.rotation);
+    format.setHorizontalAlignment(entry.style.hAlign);
+    format.setVerticalAlignment(entry.style.vAlign);
+  });
+}
+
+function toA1(row: number, col: number): string {
+  let n = col;
+  let label = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return `${label}${row}`;
 }
 
 function drawPageIfValid(sheet: ExcelScript.Worksheet, topRow: number, width: number, height: number, borderStyle: ExcelScript.BorderLineStyle) {

@@ -14,6 +14,7 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
 - [Examples](#examples)
+- [Performance Notes](#performance-notes)
 - [Tips and Limitations](#tips-and-limitations)
 
 ## Overview
@@ -233,6 +234,12 @@ S
 2 2 8 6 re
 S
 ```
+
+## Performance Notes
+- Keep practical stream sizes to roughly **2,000–5,000 commands per render pass** for interactive use; split larger jobs across pages/runs when possible.
+- Group commands in **batch-friendly order**: emit `ID` pixel blocks together, then rectangle `re` + `f`/`S` runs, then dense text/link runs so the renderer can apply fewer large range operations.
+- Prefer fewer, larger rectangular updates over many single-cell edits (for example, one `re` fill instead of many tiny fills).
+- If a document is very large, render in sections (for example, per page via `MediaBox` + `/NewPage`) instead of one monolithic stream.
 
 ## Tips and Limitations
 - The renderer clamps `/MoveTo` coordinates within the current page and sheet bounds to avoid errors.

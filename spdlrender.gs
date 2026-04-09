@@ -33,6 +33,7 @@ function renderPDF() {
   let currentFontSize = defaultFontSize;
   let currentHorizontalAlignment = defaultHorizontalAlignment;
   let currentVerticalAlignment = defaultVerticalAlignment;
+  let pendingTextOps = [];
 
   renderSheet.getRange(1, 1, maxRows, maxCols)
     .clear({contentsOnly: false, formatOnly: true})
@@ -154,8 +155,11 @@ function renderPDF() {
     if (command === "f" || command === "S") {
        if (currentPath.w > 0 && currentPath.h > 0) {
          let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
-         if (command === "f") range.setBackground(currentFillColor);
-         if (command === "S") range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
+         if (command === "f") {
+           range.setBackground(currentFillColor);
+         } else {
+           range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
+         }
        }
     }
 
@@ -166,16 +170,17 @@ function renderPDF() {
       let height = parseInt(parts[1]);
       let pixelData = parts[3];
       if (pixelData && pixelData.length >= (width * height)) {
-        for (let r = 0; r < height; r++) {        
+        const pixelRange = renderSheet.getRange(currentY, currentX, height, width);
+        const backgrounds = pixelRange.getBackgrounds();
+        for (let r = 0; r < height; r++) {
           for (let c = 0; c < width; c++) {
             let colorCode = pixelData[(r * width) + c];
-            let pixelColor = null;
-            if (colorCode === '1') pixelColor = "#000000"; 
-            if (colorCode === '2') pixelColor = "#F1C40F"; 
-            if (colorCode === '3') pixelColor = "#E74C3C"; 
-            if (pixelColor) renderSheet.getRange(currentY + r, currentX + c).setBackground(pixelColor);
+            if (colorCode === '1') backgrounds[r][c] = "#000000";
+            if (colorCode === '2') backgrounds[r][c] = "#F1C40F";
+            if (colorCode === '3') backgrounds[r][c] = "#E74C3C";
           }
         }
+        pixelRange.setBackgrounds(backgrounds);
       }
     }
 
@@ -185,10 +190,21 @@ function renderPDF() {
       if (matches && matches.length >= 2) {
         let url = matches[0].replace(/[()]/g, "");
         let label = matches[1].replace(/[()]/g, "");
-        let cell = renderSheet.getRange(currentY, currentX);
-        cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontColor(currentFillColor).setFontWeight(isBold).setFontStyle(isItalic);
-        cell.setFontWeight(isBold).setFontStyle(isItalic).setHorizontalAlignment(currentHorizontalAlignment).setVerticalAlignment(currentVerticalAlignment);
+        pendingTextOps.push({
+          row: currentY,
+          col: currentX,
+          value: `=HYPERLINK("${url}", "${label}")`,
+          isFormula: true,
+          style: {
+            color: currentFillColor,
+            weight: isBold,
+            style: isItalic,
+            line: lineStyle,
+            rotation: currentRotation,
+            hAlign: currentHorizontalAlignment,
+            vAlign: currentVerticalAlignment
+          }
+        });
       }
     }
     if (command.includes("/Rotate")) {
@@ -268,19 +284,95 @@ function renderPDF() {
       let match = command.match(/\(([^)]+)\)/);
         if (match) {
          if (currentY > 0 && currentX > 0) {
-           let cell = renderSheet.getRange(currentY, currentX);
-           cell.setValue(match[1]);           
-           cell.setFontColor(currentFillColor)
-               .setFontWeight(isBold)
-               .setFontStyle(isItalic)
-               .setFontLine(lineStyle)
-               .setTextRotation(currentRotation)
-               .setHorizontalAlignment(currentHorizontalAlignment)
-               .setVerticalAlignment(currentVerticalAlignment);
+           pendingTextOps.push({
+             row: currentY,
+             col: currentX,
+             value: match[1],
+             isFormula: false,
+             style: {
+               color: currentFillColor,
+               weight: isBold,
+               style: isItalic,
+               line: lineStyle,
+               rotation: currentRotation,
+               hAlign: currentHorizontalAlignment,
+               vAlign: currentVerticalAlignment
+             }
+           });
          }
       }
     }
   }
+
+  flushPendingTextOps(renderSheet, pendingTextOps);
+}
+
+function flushPendingTextOps(sheet, textOps) {
+  if (!textOps || textOps.length === 0) return;
+
+  const sorted = textOps.slice().sort((a, b) => (a.row - b.row) || (a.col - b.col));
+  let i = 0;
+  while (i < sorted.length) {
+    const base = sorted[i];
+    const row = base.row;
+    const startCol = base.col;
+    const isFormula = base.isFormula;
+    const values = [base.value];
+    let endCol = startCol;
+    i++;
+    while (i < sorted.length && sorted[i].row === row && sorted[i].col === endCol + 1 && sorted[i].isFormula === isFormula) {
+      values.push(sorted[i].value);
+      endCol = sorted[i].col;
+      i++;
+    }
+    const range = sheet.getRange(row, startCol, 1, values.length);
+    if (isFormula) {
+      range.setFormulas([values]);
+    } else {
+      range.setValues([values]);
+    }
+  }
+
+  const styleMap = {};
+  for (const op of sorted) {
+    const key = [
+      op.style.color,
+      op.style.weight,
+      op.style.style,
+      op.style.line,
+      op.style.rotation,
+      op.style.hAlign,
+      op.style.vAlign
+    ].join("|");
+    if (!styleMap[key]) {
+      styleMap[key] = { style: op.style, a1: [] };
+    }
+    styleMap[key].a1.push(toA1(op.row, op.col));
+  }
+
+  Object.keys(styleMap).forEach((key) => {
+    const entry = styleMap[key];
+    const rangeList = sheet.getRangeList(entry.a1);
+    rangeList
+      .setFontColor(entry.style.color)
+      .setFontWeight(entry.style.weight)
+      .setFontStyle(entry.style.style)
+      .setFontLine(entry.style.line)
+      .setTextRotation(entry.style.rotation)
+      .setHorizontalAlignment(entry.style.hAlign)
+      .setVerticalAlignment(entry.style.vAlign);
+  });
+}
+
+function toA1(row, col) {
+  let n = col;
+  let label = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    label = String.fromCharCode(65 + rem) + label;
+    n = Math.floor((n - 1) / 26);
+  }
+  return `${label}${row}`;
 }
 
   function drawPage(sheet, topRow, width, height, borderStyle) {
