@@ -147,7 +147,7 @@ Public Sub RenderSPDL()
             GoTo NextCommand
         End If
 
-        If InStr(command, "/NewPage") > 0 Then
+        If IsExactOperator(command, "/NewPage") Then
             If mediaBoxApplied And pageWidth > 0 And pageHeight > 0 Then
                 pageTopRow = pageTopRow + pageHeight + 2
                 currentX = 1
@@ -164,23 +164,22 @@ Public Sub RenderSPDL()
         End If
 
         ' --- SHAPES ---
-        If InStr(command, " re") > 0 Then
-            Dim reParts() As String
-            reParts = Split(command, " ")
-            currentPath(1) = CLng(reParts(0))
-            currentPath(2) = pageTopRow + CLng(reParts(1))
-            currentPath(3) = CLng(reParts(2))
-            currentPath(4) = CLng(reParts(3))
+        Dim rectX As Long, rectY As Long, rectW As Long, rectH As Long
+        If ParseRectangleCommand(command, rectX, rectY, rectW, rectH) Then
+            currentPath(1) = rectX
+            currentPath(2) = pageTopRow + rectY
+            currentPath(3) = rectW
+            currentPath(4) = rectH
             GoTo NextCommand
         End If
 
-        If command = "f" Or command = "S" Then
+        If IsExactOperator(command, "f") Or IsExactOperator(command, "S") Then
             If currentPath(3) > 0 And currentPath(4) > 0 Then
                 Dim targetRange As Range
                 Set targetRange = renderSheet.Range(renderSheet.Cells(currentPath(2), currentPath(1)), _
                                                     renderSheet.Cells(currentPath(2) + currentPath(4) - 1, currentPath(1) + currentPath(3) - 1))
-                If command = "f" Then targetRange.Interior.Color = currentFillColor
-                If command = "S" Then SetAllBorders targetRange.Borders, currentStrokeColor, currentLineStyle
+                If IsExactOperator(command, "f") Then targetRange.Interior.Color = currentFillColor
+                If IsExactOperator(command, "S") Then SetAllBorders targetRange.Borders, currentStrokeColor, currentLineStyle
             End If
             GoTo NextCommand
         End If
@@ -333,19 +332,15 @@ Public Sub RenderSPDL()
             GoTo NextCommand
         End If
 
-        If InStr(command, "Tj") > 0 Then
-            Dim tjMatch As Object
-            Set tjMatch = CreateObject("VBScript.RegExp")
-            tjMatch.Pattern = "\(([^)]+)\)"
-            If tjMatch.test(command) Then
+        Dim textValue As String
+        If ParseTextCommand(command, textValue) Then
                 With renderSheet.Cells(currentY, currentX)
-                    .Value = tjMatch.Execute(command)(0).SubMatches(0)
+                    .Value = textValue
                     ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
                     .Orientation = currentRotation
                     .HorizontalAlignment = hAlign
                     .VerticalAlignment = vAlign
                 End With
-            End If
             GoTo NextCommand
         End If
 
@@ -387,4 +382,35 @@ Private Function MapLineWidth(ByVal widthValue As Long) As XlLineStyle
         Case 4: MapLineWidth = xlDouble
         Case Else: MapLineWidth = xlContinuous
     End Select
+End Function
+
+Private Function IsExactOperator(ByVal command As String, ByVal expectedOperator As String) As Boolean
+    IsExactOperator = (StrComp(Trim$(command), expectedOperator, vbBinaryCompare) = 0)
+End Function
+
+Private Function ParseRectangleCommand(ByVal command As String, ByRef x As Long, ByRef y As Long, ByRef w As Long, ByRef h As Long) As Boolean
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = "^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$"
+
+    If Not re.test(command) Then Exit Function
+
+    Dim parts() As String
+    parts = Split(Trim$(command))
+    x = CLng(Fix(CDbl(parts(0))))
+    y = CLng(Fix(CDbl(parts(1))))
+    w = CLng(Fix(CDbl(parts(2))))
+    h = CLng(Fix(CDbl(parts(3))))
+    ParseRectangleCommand = True
+End Function
+
+Private Function ParseTextCommand(ByVal command As String, ByRef value As String) As Boolean
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Pattern = "^\((.*)\)\s+Tj\s*$"
+
+    If Not re.test(command) Then Exit Function
+
+    value = re.Execute(command)(0).SubMatches(0)
+    ParseTextCommand = True
 End Function
