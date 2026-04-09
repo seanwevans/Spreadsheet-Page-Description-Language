@@ -49,6 +49,7 @@ Public Sub RenderSPDL()
     Dim currentFillColor As Long: currentFillColor = RGB(0, 0, 0)
     Dim currentStrokeColor As Long: currentStrokeColor = RGB(0, 0, 0)
     Dim currentLineStyle As XlLineStyle: currentLineStyle = MapLineWidth(3)
+    Dim currentLineWeight As XlBorderWeight: currentLineWeight = MapLineWeight(3)
     Dim currentRotation As Long: currentRotation = 0
     Dim currentPath(1 To 4) As Long ' x, y, w, h
     Dim pageTopRow As Long: pageTopRow = 1
@@ -126,7 +127,7 @@ Public Sub RenderSPDL()
                     .Interior.Color = RGB(255, 242, 204)
                     .HorizontalAlignment = xlCenter
                     .VerticalAlignment = xlCenter
-                    SetAllBorders .Borders, currentStrokeColor, currentLineStyle
+                    SetAllBorders .Borders, currentStrokeColor, currentLineStyle, currentLineWeight
                 End With
             End If
             GoTo NextCommand
@@ -140,7 +141,7 @@ Public Sub RenderSPDL()
             pageHeight = CLng(mbParts(1))
             If pageWidth > 0 And pageHeight > 0 Then
                 mediaBoxApplied = True
-                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle
+                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight
             Else
                 mediaBoxApplied = False
             End If
@@ -152,7 +153,7 @@ Public Sub RenderSPDL()
                 pageTopRow = pageTopRow + pageHeight + 2
                 currentX = 1
                 currentY = pageTopRow
-                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle
+                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight
             End If
             GoTo NextCommand
         End If
@@ -160,6 +161,7 @@ Public Sub RenderSPDL()
         ' --- LINE WIDTH ---
         If command Like "* w*" Then
             currentLineStyle = MapLineWidth(CInt(Split(command)(0)))
+            currentLineWeight = MapLineWeight(CInt(Split(command)(0)))
             GoTo NextCommand
         End If
 
@@ -180,7 +182,7 @@ Public Sub RenderSPDL()
                 Set targetRange = renderSheet.Range(renderSheet.Cells(currentPath(2), currentPath(1)), _
                                                     renderSheet.Cells(currentPath(2) + currentPath(4) - 1, currentPath(1) + currentPath(3) - 1))
                 If command = "f" Then targetRange.Interior.Color = currentFillColor
-                If command = "S" Then SetAllBorders targetRange.Borders, currentStrokeColor, currentLineStyle
+                If command = "S" Then SetAllBorders targetRange.Borders, currentStrokeColor, currentLineStyle, currentLineWeight
             End If
             GoTo NextCommand
         End If
@@ -353,19 +355,20 @@ NextCommand:
     Next i
 End Sub
 
-Private Sub DrawPage(ByVal sheet As Worksheet, ByVal topRow As Long, ByVal width As Long, ByVal height As Long, ByVal borderStyle As XlLineStyle)
+Private Sub DrawPage(ByVal sheet As Worksheet, ByVal topRow As Long, ByVal width As Long, ByVal height As Long, ByVal borderStyle As XlLineStyle, ByVal borderWeight As XlBorderWeight)
     If width <= 0 Or height <= 0 Then Exit Sub
     With sheet.Range(sheet.Cells(topRow, 1), sheet.Cells(topRow + height - 1, width))
         .Interior.Color = vbWhite
-        SetAllBorders .Borders, vbBlack, borderStyle
+        SetAllBorders .Borders, vbBlack, borderStyle, borderWeight
     End With
 End Sub
 
-Private Sub SetAllBorders(ByVal borders As Borders, ByVal color As Long, ByVal style As XlLineStyle)
+Private Sub SetAllBorders(ByVal borders As Borders, ByVal color As Long, ByVal style As XlLineStyle, ByVal borderWeight As XlBorderWeight)
     Dim b As Variant
     For Each b In Array(xlEdgeTop, xlEdgeBottom, xlEdgeLeft, xlEdgeRight)
         With borders(b)
             .LineStyle = style
+            .Weight = borderWeight
             .Color = color
         End With
     Next b
@@ -380,11 +383,23 @@ Private Sub ApplyText(ByVal font As Font, ByVal color As Long, ByVal size As Dou
 End Sub
 
 Private Function MapLineWidth(ByVal widthValue As Long) As XlLineStyle
+    ' Canonical SPDL stroke width mapping (shared across renderers):
+    ' 1 = thin, 2 = medium, 3 = thick, 4 = double.
     Select Case widthValue
         Case 1: MapLineWidth = xlContinuous
         Case 2: MapLineWidth = xlContinuous
-        Case 3: MapLineWidth = xlThick
+        Case 3: MapLineWidth = xlContinuous
         Case 4: MapLineWidth = xlDouble
         Case Else: MapLineWidth = xlContinuous
+    End Select
+End Function
+
+Private Function MapLineWeight(ByVal widthValue As Long) As XlBorderWeight
+    Select Case widthValue
+        Case 1: MapLineWeight = xlThin
+        Case 2: MapLineWeight = xlMedium
+        Case 3: MapLineWeight = xlThick
+        Case 4: MapLineWeight = xlThick
+        Case Else: MapLineWeight = xlThin
     End Select
 End Function

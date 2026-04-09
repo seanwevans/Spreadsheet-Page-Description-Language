@@ -302,6 +302,8 @@ function rgbToHex(r, g, b) {
 }
 
 function mapLineWidth(widthValue) {
+  // Canonical SPDL stroke width mapping (shared across renderers):
+  // 1 = thin, 2 = medium, 3 = thick, 4 = double.
   if (widthValue === 1) return SpreadsheetApp.BorderStyle.SOLID;
   if (widthValue === 2) return SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
   if (widthValue === 3) return SpreadsheetApp.BorderStyle.SOLID_THICK;
