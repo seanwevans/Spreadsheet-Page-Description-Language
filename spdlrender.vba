@@ -313,8 +313,12 @@ Public Sub RenderSPDL()
         If InStr(command, " Td") > 0 Then
             Dim tdParts() As String
             tdParts = Split(command, " ")
-            currentX = currentX + CLng(tdParts(0)) \ 10
-            currentY = currentY + CLng(tdParts(1)) \ 10
+            Dim deltaX As Double
+            Dim deltaY As Double
+            deltaX = CDbl(tdParts(0))
+            deltaY = CDbl(tdParts(1))
+            currentX = currentX + CLng(Fix(deltaX / 10))
+            currentY = currentY + CLng(Fix(deltaY / 10))
             GoTo NextCommand
         End If
 

@@ -291,9 +291,13 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     if (command.includes("Td")) {
-      const parts = command.split(/\s+/);
-      currentX += Math.floor(parseInt(parts[0], 10) / 10);
-      currentY += Math.floor(parseInt(parts[1], 10) / 10);
+      const parts = command.trim().split(/\s+/);
+      const deltaX = parseFloat(parts[0]);
+      const deltaY = parseFloat(parts[1]);
+      if (!isNaN(deltaX) && !isNaN(deltaY)) {
+        currentX += Math.trunc(deltaX / 10);
+        currentY += Math.trunc(deltaY / 10);
+      }
       continue;
     }
 

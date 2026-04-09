@@ -253,9 +253,13 @@ function renderPDF() {
       }
     }
     if (command.includes("Td")) {
-      let parts = command.split(" ");
-      currentX += Math.floor(parseInt(parts[0]) / 10);
-      currentY += Math.floor(parseInt(parts[1]) / 10);
+      let parts = command.trim().split(/\s+/);
+      let deltaX = parseFloat(parts[0]);
+      let deltaY = parseFloat(parts[1]);
+      if (!isNaN(deltaX) && !isNaN(deltaY)) {
+        currentX += Math.trunc(deltaX / 10);
+        currentY += Math.trunc(deltaY / 10);
+      }
     }
     if (command.includes("/MoveTo")) {
       let parts = command.split(" ");
