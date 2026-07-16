@@ -92,9 +92,14 @@ Public Sub RenderSPDL()
         command = Trim$(CStr(sourceSheet.Cells(i + 1, 1).Value))
         If Len(command) = 0 Then GoTo NextCommand
 
+        ' One bad command (e.g. a range outside the sheet) must not abort the
+        ' whole render: log it and continue with the next command.
+        On Error GoTo CommandError
+
         ' --- TEXT --- (parsed first so text content can never be misread as an operator)
         Set m = ExecPattern(command, TEXT_COMMAND_PATTERN)
         If Not m Is Nothing Then
+            If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             With renderSheet.Cells(currentY, currentX)
                 .Value = m.SubMatches(0)
                 ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
@@ -108,6 +113,7 @@ Public Sub RenderSPDL()
         ' --- LINKS ---
         Set m = ExecPattern(command, LINK_COMMAND_PATTERN)
         If Not m Is Nothing Then
+            If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             With renderSheet.Cells(currentY, currentX)
                 .Hyperlinks.Delete
                 renderSheet.Hyperlinks.Add Anchor:=renderSheet.Cells(currentY, currentX), Address:=m.SubMatches(0), TextToDisplay:=m.SubMatches(1)
@@ -123,24 +129,28 @@ Public Sub RenderSPDL()
         If Not m Is Nothing Then
             Dim w As Double, h As Double
             w = Val(m.SubMatches(0)): h = Val(m.SubMatches(1))
+            If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             On Error Resume Next
             renderSheet.Shapes.AddPicture m.SubMatches(2), msoFalse, msoTrue, _
                 renderSheet.Cells(currentY, currentX).Left, _
                 renderSheet.Cells(currentY, currentX).Top, _
                 w, h
-            On Error GoTo 0
+            On Error GoTo CommandError
             GoTo NextCommand
         End If
 
         ' --- ANNOTATIONS (/Note) ---
         Set m = ExecPattern(command, NOTE_COMMAND_PATTERN)
         If Not m Is Nothing Then
-            renderSheet.Cells(currentY, currentX).NoteText m.SubMatches(0)
+            If IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then
+                renderSheet.Cells(currentY, currentX).NoteText m.SubMatches(0)
+            End If
             GoTo NextCommand
         End If
 
         ' --- ACROFORMS ---
         If IsExactOperator(command, "/CheckBox") Then
+            If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             With renderSheet.Cells(currentY, currentX)
                 .Value = ChrW(9744) ' ballot box
                 .HorizontalAlignment = xlCenter
@@ -151,9 +161,12 @@ Public Sub RenderSPDL()
 
         Set m = ExecPattern(command, DROPDOWN_COMMAND_PATTERN)
         If Not m Is Nothing Then
+            If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             Dim options As String
             options = m.SubMatches(0)
-            With renderSheet.Cells(currentY, currentX).Resize(1, 6)
+            Dim dropdownWidth As Long
+            dropdownWidth = Application.Min(6, maxCols - currentX + 1)
+            With renderSheet.Cells(currentY, currentX).Resize(1, dropdownWidth)
                 .Merge
                 .Validation.Delete
                 .Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=options
@@ -173,7 +186,7 @@ Public Sub RenderSPDL()
             pageHeight = CLng(m.SubMatches(1))
             If pageWidth > 0 And pageHeight > 0 Then
                 mediaBoxApplied = True
-                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight
+                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight, maxRows, maxCols
             Else
                 mediaBoxApplied = False
             End If
@@ -185,7 +198,7 @@ Public Sub RenderSPDL()
                 pageTopRow = pageTopRow + pageHeight + 2
                 currentX = 1
                 currentY = pageTopRow
-                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight
+                DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight, maxRows, maxCols
             End If
             GoTo NextCommand
         End If
@@ -210,11 +223,16 @@ Public Sub RenderSPDL()
 
         If IsExactOperator(command, "f") Or IsExactOperator(command, "S") Then
             If currentPath(3) > 0 And currentPath(4) > 0 Then
-                Dim targetRange As Range
-                Set targetRange = renderSheet.Range(renderSheet.Cells(currentPath(2), currentPath(1)), _
-                                                    renderSheet.Cells(currentPath(2) + currentPath(4) - 1, currentPath(1) + currentPath(3) - 1))
-                If command = "f" Then targetRange.Interior.Color = currentFillColor
-                If command = "S" Then SetAllBorders targetRange.Borders, currentStrokeColor, currentLineStyle, currentLineWeight
+                Dim clampX As Long, clampY As Long, clampW As Long, clampH As Long
+                clampX = currentPath(1): clampY = currentPath(2)
+                clampW = currentPath(3): clampH = currentPath(4)
+                If ClampRect(clampX, clampY, clampW, clampH, maxRows, maxCols) Then
+                    Dim targetRange As Range
+                    Set targetRange = renderSheet.Range(renderSheet.Cells(clampY, clampX), _
+                                                        renderSheet.Cells(clampY + clampH - 1, clampX + clampW - 1))
+                    If command = "f" Then targetRange.Interior.Color = currentFillColor
+                    If command = "S" Then SetAllBorders targetRange.Borders, currentStrokeColor, currentLineStyle, currentLineWeight
+                End If
             End If
             GoTo NextCommand
         End If
@@ -236,7 +254,7 @@ Public Sub RenderSPDL()
                         If code = "1" Then pixelColor = RGB(0, 0, 0)
                         If code = "2" Then pixelColor = RGB(241, 196, 15)
                         If code = "3" Then pixelColor = RGB(231, 76, 60)
-                        If Not IsEmpty(pixelColor) Then
+                        If Not IsEmpty(pixelColor) And IsInsideCanvas(currentX + cc, currentY + rr, maxRows, maxCols) Then
                             renderSheet.Cells(currentY + rr, currentX + cc).Interior.Color = pixelColor
                         End If
                     Next cc
@@ -250,7 +268,9 @@ Public Sub RenderSPDL()
             Dim parsedRotation As Long
             If TryParseRotationOperand(command, parsedRotation) Then
                 currentRotation = parsedRotation
-                renderSheet.Cells(currentY, currentX).Orientation = currentRotation
+                If IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then
+                    renderSheet.Cells(currentY, currentX).Orientation = currentRotation
+                End If
             End If
             GoTo NextCommand
         End If
@@ -342,7 +362,13 @@ Public Sub RenderSPDL()
         Debug.Print "Skipped unrecognized command: " & command
 
 NextCommand:
+        On Error GoTo 0
     Next i
+    Exit Sub
+
+CommandError:
+    Debug.Print "Error processing command """ & command & """ (stream row " & (i + 1) & "): " & Err.Description
+    Resume NextCommand
 End Sub
 
 Private Function ExecPattern(ByVal command As String, ByVal pattern As String) As Object
@@ -370,13 +396,36 @@ Private Function HasRotateToken(ByVal command As String) As Boolean
     HasRotateToken = False
 End Function
 
-Private Sub DrawPage(ByVal sheet As Worksheet, ByVal topRow As Long, ByVal width As Long, ByVal height As Long, ByVal borderStyle As XlLineStyle, ByVal borderWeight As XlBorderWeight)
+Private Sub DrawPage(ByVal sheet As Worksheet, ByVal topRow As Long, ByVal width As Long, ByVal height As Long, ByVal borderStyle As XlLineStyle, ByVal borderWeight As XlBorderWeight, ByVal maxRows As Long, ByVal maxCols As Long)
     If width <= 0 Or height <= 0 Then Exit Sub
-    With sheet.Range(sheet.Cells(topRow, 1), sheet.Cells(topRow + height - 1, width))
+    Dim x As Long, y As Long, w As Long, h As Long
+    x = 1: y = topRow: w = width: h = height
+    If Not ClampRect(x, y, w, h, maxRows, maxCols) Then Exit Sub
+    With sheet.Range(sheet.Cells(y, x), sheet.Cells(y + h - 1, x + w - 1))
         .Interior.Color = vbWhite
         SetAllBorders .Borders, vbBlack, borderStyle, borderWeight
     End With
 End Sub
+
+Private Function IsInsideCanvas(ByVal x As Long, ByVal y As Long, ByVal maxRows As Long, ByVal maxCols As Long) As Boolean
+    IsInsideCanvas = (x >= 1 And x <= maxCols And y >= 1 And y <= maxRows)
+End Function
+
+' Clamps the rectangle (x, y, w, h) to the canvas in place. Returns False when
+' the rectangle lies entirely outside the canvas.
+Private Function ClampRect(ByRef x As Long, ByRef y As Long, ByRef w As Long, ByRef h As Long, ByVal maxRows As Long, ByVal maxCols As Long) As Boolean
+    Dim x2 As Long, y2 As Long
+    x2 = x + w - 1
+    y2 = y + h - 1
+    If x < 1 Then x = 1
+    If y < 1 Then y = 1
+    If x2 > maxCols Then x2 = maxCols
+    If y2 > maxRows Then y2 = maxRows
+    If x2 < x Or y2 < y Then Exit Function
+    w = x2 - x + 1
+    h = y2 - y + 1
+    ClampRect = True
+End Function
 
 Private Sub SetAllBorders(ByVal borders As Borders, ByVal color As Long, ByVal style As XlLineStyle, ByVal borderWeight As XlBorderWeight)
     Dim b As Variant
