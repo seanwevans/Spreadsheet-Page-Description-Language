@@ -133,7 +133,7 @@ When `truncateTable` is enabled the script deletes existing records in batches o
 - `(text) Tj` — writes text with fill color, bold/italic, underline, rotation, and alignment fields.
 - `(url) (label) /Link` — stores label and URL; Airtable renders hyperlinks if the field type supports it.
 - `r g b rg` / `r g b SC` — maps to `Background`/`BorderColor` hex values.
-- `x y w h re` + `f` or `S` — fills or strokes rectangular regions by upserting individual cells.
+- `x y w h re` + `f` or `S` — fills rectangular regions (or strokes their perimeter cells) by upserting individual cells.
 - `w h ID <data>` — basic pixel art using color codes 1–3.
 - `/CheckBox`, `(opt1,opt2) /Dropdown`, `(note) /Note`, `/InsertImage` — map to checkbox, single select, long text, and attachment/image metadata fields respectively.
 
@@ -166,7 +166,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `W H MediaBox` — Define page width/height (in cells). Draws a white canvas with a border. Required before `/NewPage`.
 - `/NewPage` — Starts a new page below the previous one using the last `MediaBox` dimensions.
 - `/MoveTo X Y` — Move cursor to an absolute cell (1-based) relative to the current page’s top-left corner. Y is clamped to the page height.
-- `dx dy Td` — Move cursor **relatively** by deltas (tenths of a cell). Inputs are parsed as floating-point values, then converted with truncation toward zero (`trunc(dx/10)`, `trunc(dy/10)`) for consistent behavior across Google Apps Script, Office Scripts, and VBA. `10 10 Td` moves one cell down/right.
+- `dx dy Td` — Move cursor **relatively** by deltas (tenths of a cell). Inputs are parsed as floating-point values, then converted with truncation toward zero (`trunc(dx/10)`, `trunc(dy/10)`) for consistent behavior across all renderers (Google Apps Script, Office Scripts, VBA, AppleScript, and Airtable). `10 10 Td` moves one cell down/right.
 
 ### Text and Typography
 - `(text) Tj` — Write text at the current cursor with active styling (fill color, weight, style, rotation, alignment).

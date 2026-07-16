@@ -389,7 +389,12 @@ function drawPageIfValid(sheet, topRow, width, height, borderStyle, maxRows, max
 }
 
 function rgbToHex(r, g, b) {
-  return "#" + ((1 << 24) + (Math.floor(r) << 16) + (Math.floor(g) << 8) + Math.floor(b)).toString(16).slice(1);
+  const clamp = (value) => {
+    const n = Math.floor(Number(value));
+    if (isNaN(n)) return 0;
+    return Math.max(0, Math.min(255, n));
+  };
+  return "#" + ((1 << 24) + (clamp(r) << 16) + (clamp(g) << 8) + clamp(b)).toString(16).slice(1);
 }
 
 function mapLineWidth(widthValue) {

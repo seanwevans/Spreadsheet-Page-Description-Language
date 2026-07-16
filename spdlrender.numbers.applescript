@@ -3,8 +3,8 @@
 -- Supported commands (case-sensitive):
 --   W H MediaBox            : Defines a page height/width (in cells) and draws a white background region
 --   /NewPage                : Starts a new page using the last MediaBox size
---   /MoveTo X Y             : Sets the cursor to an absolute position on the current page (1-based)
---   dx dy Td                : Moves the cursor relatively (tenths of a cell; rounded to nearest cell)
+--   /MoveTo X Y             : Sets the cursor to an absolute position on the current page (1-based, clamped to the page bounds)
+--   dx dy Td                : Moves the cursor relatively (tenths of a cell; truncated toward zero, matching the other renderers)
 --   (text) Tj               : Writes text at the current cursor using the active fill color
 --   r g b rg                : Sets the fill color (0–1 values)
 --   r g b SC                : Sets the stroke color for rectangles
@@ -33,13 +33,16 @@ on run
         set totalRows to row count of cmdTable
         repeat with r from 2 to totalRows
             set rawValue to value of cell ("A" & r) of cmdTable
-            if rawValue is missing value or rawValue is "" then exit repeat
-            set cmd to my normalizeText(rawValue)
-            try
-                set state to my processCommand(cmd, state, renderTable, logTable)
-            on error errMsg number errNum
-                my logMessage(logTable, "Row " & r & ": " & errMsg)
-            end try
+            -- Blank rows are skipped rather than ending the stream, matching
+            -- the other renderers.
+            if rawValue is not missing value and rawValue is not "" then
+                set cmd to my normalizeText(rawValue)
+                try
+                    set state to my processCommand(cmd, state, renderTable, logTable)
+                on error errMsg number errNum
+                    my logMessage(logTable, "Row " & r & ": " & errMsg)
+                end try
+            end if
         end repeat
         my logMessage(logTable, "Render complete at " & (current date))
     end tell
@@ -146,19 +149,41 @@ on handleMoveTo(tokens, state)
     if (count of tokens) < 3 then error "/MoveTo requires X and Y"
     set xVal to (item 2 of tokens) as integer
     set yVal to (item 3 of tokens) as integer
+    -- Clamp to the current page (or canvas) bounds, matching the other renderers.
+    set maxX to defaultCols
+    if (state's pageWidth) > 0 then set maxX to (state's pageWidth)
+    if xVal < 1 then set xVal to 1
+    if xVal > maxX then set xVal to maxX
     set newRow to (state's pageTop) + yVal - 1
+    if newRow < (state's pageTop) then set newRow to (state's pageTop)
+    if (state's pageHeight) > 0 then
+        set pageBottom to (state's pageTop) + (state's pageHeight) - 1
+        if newRow > pageBottom then set newRow to pageBottom
+    else if newRow > defaultRows then
+        set newRow to defaultRows
+    end if
     set newCol to xVal
     return {pageTop:(state's pageTop), pageHeight:(state's pageHeight), pageWidth:(state's pageWidth), cursorRow:newRow, cursorCol:newCol, fillColor:(state's fillColor), strokeColor:(state's strokeColor), lastRect:(state's lastRect)}
 end handleMoveTo
 
 on handleRelativeMove(tokens, state)
     if (count of tokens) < 3 then error "Td requires dx and dy"
-    set dx to round ((item 1 of tokens) as real / 10)
-    set dy to round ((item 2 of tokens) as real / 10)
+    -- Deltas are truncated toward zero, matching the documented Td semantics
+    -- shared by all renderers.
+    set dx to my truncateTowardZero(((item 1 of tokens) as real) / 10)
+    set dy to my truncateTowardZero(((item 2 of tokens) as real) / 10)
     set newRow to (state's cursorRow) + dy
     set newCol to (state's cursorCol) + dx
     return {pageTop:(state's pageTop), pageHeight:(state's pageHeight), pageWidth:(state's pageWidth), cursorRow:newRow, cursorCol:newCol, fillColor:(state's fillColor), strokeColor:(state's strokeColor), lastRect:(state's lastRect)}
 end handleRelativeMove
+
+on truncateTowardZero(v)
+    if v < 0 then
+        return -((-v) div 1)
+    else
+        return v div 1
+    end if
+end truncateTowardZero
 
 on handleFillColor(tokens, state)
     if (count of tokens) < 3 then error "rg requires r g b"

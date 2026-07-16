@@ -128,13 +128,15 @@ const MEDIABOX_RE = /^(\d+)\s+(\d+)\s+MediaBox$/;
 const LINE_WIDTH_RE = /^(\d+)\s+w$/;
 const RECT_RE = /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+re$/;
 const PIXEL_ART_RE = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
-const ROTATE_RE = /^\/Rotate\s+(-?\d+(?:\.\d+)?)$/;
+// /Rotate accepts its operand on either side ("/Rotate 45" or "45 /Rotate"),
+// matching the other renderers.
+const ROTATE_RE = /^(?:\/Rotate\s+(-?\d+(?:\.\d+)?)|(-?\d+(?:\.\d+)?)\s+\/Rotate)$/;
 const ALIGN_RE = /^\/Align\s+(\S+)$/;
 const FILL_COLOR_RE = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
 const STROKE_COLOR_RE = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
 const FONT_RE = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
 const UNDERLINE_RE = /^([01])\s+Tr$/;
-const FONT_SIZE_RE = /^(\d+)\s+Ts$/;
+const FONT_SIZE_RE = /^([+-]?\d*\.?\d+)\s+Ts$/;
 const ALIGN_CODE_RE = /^(\d+)\s+TA$/;
 const TD_RE = /^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$/;
 const MOVE_TO_RE = /^\/MoveTo\s+(-?\d+)\s+(-?\d+)$/;
@@ -275,6 +277,10 @@ function parseSpdl(stream) {
         const baseY = state.pageTop + path.y;
         for (let row = 0; row < path.h; row += 1) {
           for (let col = 0; col < path.w; col += 1) {
+            // Strokes only touch the rectangle's perimeter, matching the
+            // border-only behavior of the other renderers.
+            const onPerimeter = row === 0 || row === path.h - 1 || col === 0 || col === path.w - 1;
+            if (command === "S" && !onPerimeter) continue;
             enqueueCell(path.x + col, baseY + row, {
               Background: command === "f" ? state.fill : undefined,
               BorderColor: command === "S" ? state.stroke : undefined,
@@ -321,7 +327,7 @@ function parseSpdl(stream) {
     }
 
     if ((match = command.match(ROTATE_RE))) {
-      state.rotation = parseInt(match[1], 10) || 0;
+      state.rotation = Math.trunc(parseFloat(match[1] !== undefined ? match[1] : match[2])) || 0;
       continue;
     }
 
@@ -357,13 +363,16 @@ function parseSpdl(stream) {
     }
 
     if ((match = command.match(FONT_SIZE_RE))) {
-      state.fontSize = parseInt(match[1], 10);
+      const parsedFontSize = parseFloat(match[1]);
+      state.fontSize = parsedFontSize > 0 ? parsedFontSize : 15;
       continue;
     }
 
+    // Deltas are truncated toward zero, matching the documented Td semantics
+    // shared by all renderers.
     if ((match = command.match(TD_RE))) {
-      state.cursorX += Math.floor(parseFloat(match[1]) / 10);
-      state.cursorY += Math.floor(parseFloat(match[2]) / 10);
+      state.cursorX += Math.trunc(parseFloat(match[1]) / 10);
+      state.cursorY += Math.trunc(parseFloat(match[2]) / 10);
       continue;
     }
 
