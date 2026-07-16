@@ -4,7 +4,7 @@
 SPDL is a lightweight, interpreted markup language for building high-fidelity, interactive documents inside spreadsheets. It separates a linear **content stream** from the rendered **presentation layer**, letting you describe pages, text, shapes, images, and form controls using concise commands that are parsed by a renderer.
 
 ![Status](https://img.shields.io/badge/Specification-v1.0-blue)
-![Engine](https://img.shields.io/badge/Engine-Google%20Apps%20Script-green)
+![Renderers](https://img.shields.io/badge/Renderers-Sheets%20%7C%20Excel%20%7C%20VBA%20%7C%20Numbers%20%7C%20Airtable-green)
 
 ## Table of Contents
 - [Overview](#overview)
