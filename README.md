@@ -110,7 +110,7 @@ Copy `spdlrender.airtable.config.json` and fill in your values:
 }
 ```
 
-- `apiToken`: Airtable personal access token with **data.records:write** scope on the base.
+- `apiToken`: Airtable personal access token with **data.records:write** scope on the base. Prefer setting the `AIRTABLE_API_TOKEN` (or `AIRTABLE_API_KEY`) environment variable and leaving this field empty, so the token never lives in a file. If you do keep it in a config file, name the copy `*.local.json` — those are gitignored.
 - `baseId`: target base identifier (e.g., `app...`).
 - `renderTable`: Airtable table name that stores rendered cells.
 - `streamPath`: path to the SPDL text file; omit to read from stdin.

@@ -54,7 +54,16 @@ function loadConfig(configPath) {
   if (!fs.existsSync(absolute)) {
     throw new Error(`Config file not found at ${absolute}`);
   }
-  return JSON.parse(fs.readFileSync(absolute, "utf8"));
+  return applyEnvOverrides(JSON.parse(fs.readFileSync(absolute, "utf8")));
+}
+
+// The API token can come from the environment instead of the config file so
+// that credentials never need to be written to disk (or committed).
+function applyEnvOverrides(config, env = process.env) {
+  return {
+    ...config,
+    apiToken: config.apiToken || env.AIRTABLE_API_TOKEN || env.AIRTABLE_API_KEY,
+  };
 }
 
 function readStream(config) {
@@ -452,7 +461,7 @@ async function main() {
   const configPath = process.argv[2] || "spdlrender.airtable.config.json";
   const config = loadConfig(configPath);
   if (!config.apiToken || !config.baseId || !config.renderTable) {
-    throw new Error("Config must include apiToken, baseId, and renderTable");
+    throw new Error("Config must include baseId and renderTable, plus apiToken (or the AIRTABLE_API_TOKEN environment variable)");
   }
 
   const streamText = readStream(config);
@@ -482,4 +491,5 @@ module.exports = {
   parseSpdl,
   clearTable,
   syncRecords,
+  applyEnvOverrides,
 };
