@@ -104,7 +104,7 @@ Copy `spdlrender.airtable.config.json` and fill in your values:
   "apiToken": "patXXXXXXXXXXXXXX",
   "baseId": "appXXXXXXXXXXXXXX",
   "renderTable": "02_Rendered_View",
-  "streamPath": "example.spdl",
+  "streamPath": "examples/example.spdl",
   "truncateTable": true,
   "batchSize": 10
 }
@@ -160,7 +160,7 @@ If your base previously relied on legacy `/InsertImage` behavior (writing image 
    - Interpret each command and update the grid.
 
 ## Command Reference
-The renderer understands a subset of PDF/PostScript-inspired operations. Commands are case-sensitive.
+The renderer understands a subset of PDF/PostScript-inspired operations. Commands are case-sensitive. This section is an overview — [SPEC.md](SPEC.md) defines the precise grammar, defaults, rounding, and clamping rules that all renderers follow.
 
 ### Page and Cursor Control
 - `W H MediaBox` — Define page width/height (in cells). Draws a white canvas with a border. Required before `/NewPage`.
@@ -200,7 +200,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `(note) /Note` — Adds a cell note at the cursor.
 
 ## Examples
-Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`.
+Ready-to-run streams live in [`examples/`](examples/) (`hello-world.spdl`, `shapes-and-strokes.spdl`, and the fuller `example.spdl` used by the Airtable config). Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`, or point the Airtable renderer's `streamPath` at one of the files.
 
 ### Hello World
 ```spdl

@@ -1,0 +1,36 @@
+16 20 MediaBox
+/F2 15 Tf
+20 Ts
+/MoveTo 3 2
+(SPDL Demo) Tj
+/F1 15 Tf
+12 Ts
+/MoveTo 3 4
+(Text, shapes, links, and forms) Tj
+0 0 1 rg
+1 0 0 SC
+2 w
+2 6 6 3 re
+f
+S
+0 0 0 rg
+/MoveTo 3 10
+/Align VMiddle
+1 TA
+(https://example.com) (Click Me) /Link
+6 TA
+/MoveTo 3 12
+(Pick one:) Tj
+/MoveTo 3 13
+(Alpha,Beta,Gamma) /Dropdown
+/MoveTo 3 15
+/CheckBox
+/MoveTo 4 15
+(Done?) Tj
+/MoveTo 3 17
+(This cell has a note) Tj
+(Rendered by an SPDL renderer) /Note
+/NewPage
+/MoveTo 3 2
+(Page two) Tj
+3 3 ID 121212121
