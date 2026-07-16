@@ -1,3 +1,26 @@
+// Anchored command patterns. Every SPDL command must match one of these
+// exactly; substring checks are never used for dispatch so that text content
+// such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
+const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
+const LINK_COMMAND_PATTERN = /^\(([^)]*)\)\s+\(([^)]*)\)\s+\/Link$/;
+const INSERT_IMAGE_PATTERN = /^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+\/InsertImage$/;
+const NOTE_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Note$/;
+const DROPDOWN_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Dropdown$/;
+const MEDIABOX_PATTERN = /^(\d+)\s+(\d+)\s+MediaBox$/;
+const LINE_WIDTH_PATTERN = /^(\d+)\s+w$/;
+const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
+const PIXEL_ART_PATTERN = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
+const ALIGN_COMMAND_PATTERN = /^\/Align\s+(\S+)$/;
+const FILL_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
+const STROKE_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
+const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
+const UNDERLINE_PATTERN = /^([01])\s+Tr$/;
+const FONT_SIZE_PATTERN = /^([+-]?\d*\.?\d+)\s+Ts$/;
+const ALIGN_CODE_PATTERN = /^(\d+)\s+TA$/;
+const TD_PATTERN = /^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$/;
+const MOVE_TO_PATTERN = /^\/MoveTo\s+(-?\d+)\s+(-?\d+)$/;
+const ROTATE_TOKEN = "/Rotate";
+
 function renderPDF() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheet = ss.getSheetByName("01_Hex_Stream");
@@ -13,7 +36,7 @@ function renderPDF() {
 
   const defaultHorizontalAlignment = renderSheet.getRange(1, 1).getHorizontalAlignment() || "left";
   const defaultVerticalAlignment = renderSheet.getRange(1, 1).getVerticalAlignment() || "top";
-  
+
   let currentX = 1;
   let currentY = 1;
   let currentFillColor = "#000000";
@@ -53,67 +76,92 @@ function renderPDF() {
   let oldImages = renderSheet.getImages();
   for (let k = 0; k < oldImages.length; k++)
     oldImages[k].remove();
-  
+
   for (let i = 0; i < data.length; i++) {
     let command = data[i][0].toString().trim();
+    if (!command) continue;
+    let match;
 
-    // --- IMAGE (InsertImage) ---
-    if (command.includes("/InsertImage")) {
-       let match = command.match(/\(([^)]+)\)/);
-       if (match) {
-         let url = match[1];
-         let remaining = command.replace(match[0], ""); 
-         let nums = remaining.trim().split(" ");
-         let w = parseInt(nums[0]);
-         let h = parseInt(nums[1]);
-         
-         if (currentY > 0 && currentX > 0) {
-           let img = renderSheet.insertImage(url, currentX, currentY); 
-           img.setWidth(w).setHeight(h);
-         }
-       }
+    // --- TEXT --- (parsed first so text content can never be misread as an operator)
+    if ((match = command.match(TEXT_COMMAND_PATTERN))) {
+      if (currentY > 0 && currentX > 0) {
+        let cell = renderSheet.getRange(currentY, currentX);
+        cell.setValue(match[1]);
+        cell.setFontColor(currentFillColor)
+            .setFontSize(currentFontSize)
+            .setFontWeight(isBold)
+            .setFontStyle(isItalic)
+            .setFontLine(lineStyle)
+            .setTextRotation(currentRotation)
+            .setHorizontalAlignment(currentHorizontalAlignment)
+            .setVerticalAlignment(currentVerticalAlignment);
+      }
+      continue;
     }
 
-    // --- ANNOTATIONS (/Note) ---    
-    if (command.includes("/Note")) {
-       let match = command.match(/\(([^)]+)\)/);
-       if (match) {
-         if (currentY > 0 && currentX > 0) {
-           renderSheet.getRange(currentY, currentX).setNote(match[1]);
-         }
-       }
+    // --- LINKS ---
+    if ((match = command.match(LINK_COMMAND_PATTERN))) {
+      let url = match[1];
+      let label = match[2];
+      let cell = renderSheet.getRange(currentY, currentX);
+      cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
+      cell.setFontColor(currentFillColor)
+          .setFontSize(currentFontSize)
+          .setFontWeight(isBold)
+          .setFontStyle(isItalic)
+          .setHorizontalAlignment(currentHorizontalAlignment)
+          .setVerticalAlignment(currentVerticalAlignment);
+      continue;
+    }
+
+    // --- IMAGE (InsertImage) ---
+    if ((match = command.match(INSERT_IMAGE_PATTERN))) {
+      let w = parseInt(match[1]);
+      let h = parseInt(match[2]);
+      let url = match[3];
+      if (currentY > 0 && currentX > 0) {
+        let img = renderSheet.insertImage(url, currentX, currentY);
+        img.setWidth(w).setHeight(h);
+      }
+      continue;
+    }
+
+    // --- ANNOTATIONS (/Note) ---
+    if ((match = command.match(NOTE_COMMAND_PATTERN))) {
+      if (currentY > 0 && currentX > 0) {
+        renderSheet.getRange(currentY, currentX).setNote(match[1]);
+      }
+      continue;
     }
 
     // --- ACROFORMS ---
-    if (command.includes("/CheckBox")) {
-       if (currentY > 0 && currentX > 0) {
-         let range = renderSheet.getRange(currentY, currentX, 1, 1);
-         range.merge().insertCheckboxes().setHorizontalAlignment("center").setVerticalAlignment("middle");
-       }
+    if (isExactOperator(command, "/CheckBox")) {
+      if (currentY > 0 && currentX > 0) {
+        let range = renderSheet.getRange(currentY, currentX, 1, 1);
+        range.merge().insertCheckboxes().setHorizontalAlignment("center").setVerticalAlignment("middle");
+      }
+      continue;
     }
-    if (command.includes("/Dropdown")) {
-       let match = command.match(/\(([^)]+)\)/);
-       if (match) {
-         let options = match[1].split(",").map(s => s.trim());
-         let rule = SpreadsheetApp.newDataValidation().requireValueInList(options, true).build();
-         if (currentY > 0 && currentX > 0) {
-           let range = renderSheet.getRange(currentY, currentX, 1, 6);
-           range.merge()
-            .setDataValidation(rule)
-            .setValue(options[0])
-            .setBackground("#FFF2CC")
-            .setHorizontalAlignment("center")
-            .setVerticalAlignment("middle")
-            .setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID);
-         }
-       }
+    if ((match = command.match(DROPDOWN_COMMAND_PATTERN))) {
+      let options = match[1].split(",").map(s => s.trim());
+      let rule = SpreadsheetApp.newDataValidation().requireValueInList(options, true).build();
+      if (currentY > 0 && currentX > 0) {
+        let range = renderSheet.getRange(currentY, currentX, 1, 6);
+        range.merge()
+          .setDataValidation(rule)
+          .setValue(options[0])
+          .setBackground("#FFF2CC")
+          .setHorizontalAlignment("center")
+          .setVerticalAlignment("middle")
+          .setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID);
+      }
+      continue;
     }
 
     // --- PAGE SETUP ---
-    if (command.includes("MediaBox")) {
-      let parts = command.split(" ");
-      let parsedWidth = parseInt(parts[0]);
-      let parsedHeight = parseInt(parts[1]);
+    if ((match = command.match(MEDIABOX_PATTERN))) {
+      let parsedWidth = parseInt(match[1]);
+      let parsedHeight = parseInt(match[2]);
 
       if (parsedWidth > 0 && parsedHeight > 0) {
         pageWidth = parsedWidth;
@@ -124,6 +172,7 @@ function renderPDF() {
         mediaBoxApplied = false;
         Logger.log(`Ignoring MediaBox with invalid dimensions: ${command}`);
       }
+      continue;
     }
     if (isExactOperator(command, "/NewPage")) {
       if (!mediaBoxApplied || pageWidth <= 0 || pageHeight <= 0) {
@@ -134,13 +183,13 @@ function renderPDF() {
         currentY = pageTopRow;
         drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth);
       }
+      continue;
     }
 
     // --- LINE WIDTH ---
-    let lineWidthMatch = command.match(/^(\d+)\s+w\b/);
-    if (lineWidthMatch) {
-      let widthValue = parseInt(lineWidthMatch[1]);
-      currentLineWidth = mapLineWidth(widthValue);
+    if ((match = command.match(LINE_WIDTH_PATTERN))) {
+      currentLineWidth = mapLineWidth(parseInt(match[1]));
+      continue;
     }
 
     // --- SHAPES ---
@@ -150,155 +199,121 @@ function renderPDF() {
       currentPath.y = pageTopRow + rectanglePath.y;
       currentPath.w = rectanglePath.w;
       currentPath.h = rectanglePath.h;
+      continue;
     }
     if (isExactOperator(command, "f") || isExactOperator(command, "S")) {
-       if (currentPath.w > 0 && currentPath.h > 0) {
-         let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
-         if (isExactOperator(command, "f")) range.setBackground(currentFillColor);
-         if (isExactOperator(command, "S")) range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
-       }
+      if (currentPath.w > 0 && currentPath.h > 0) {
+        let range = renderSheet.getRange(currentPath.y, currentPath.x, currentPath.h, currentPath.w);
+        if (isExactOperator(command, "f")) range.setBackground(currentFillColor);
+        if (isExactOperator(command, "S")) range.setBorder(true, true, true, true, false, false, currentStrokeColor, currentLineWidth);
+      }
+      continue;
     }
 
-    // --- PIXEL IMAGES ---    
-    if (command.includes("ID")) {
-      let parts = command.split(" ");
-      let width = parseInt(parts[0]);
-      let height = parseInt(parts[1]);
-      let pixelData = parts[3];
+    // --- PIXEL IMAGES ---
+    if ((match = command.match(PIXEL_ART_PATTERN))) {
+      let width = parseInt(match[1]);
+      let height = parseInt(match[2]);
+      let pixelData = match[3];
       if (pixelData && pixelData.length >= (width * height)) {
-        for (let r = 0; r < height; r++) {        
+        for (let r = 0; r < height; r++) {
           for (let c = 0; c < width; c++) {
             let colorCode = pixelData[(r * width) + c];
             let pixelColor = null;
-            if (colorCode === '1') pixelColor = "#000000"; 
-            if (colorCode === '2') pixelColor = "#F1C40F"; 
-            if (colorCode === '3') pixelColor = "#E74C3C"; 
+            if (colorCode === '1') pixelColor = "#000000";
+            if (colorCode === '2') pixelColor = "#F1C40F";
+            if (colorCode === '3') pixelColor = "#E74C3C";
             if (pixelColor) renderSheet.getRange(currentY + r, currentX + c).setBackground(pixelColor);
           }
         }
       }
+      continue;
     }
 
-    // --- LINKS & TEXT ---
-    if (command.includes("/Link")) {
-      let matches = command.match(/\(([^)]+)\)/g);
-      if (matches && matches.length >= 2) {
-        let url = matches[0].replace(/[()]/g, "");
-        let label = matches[1].replace(/[()]/g, "");
-        let cell = renderSheet.getRange(currentY, currentX);
-        cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        cell.setFontColor(currentFillColor).setFontSize(currentFontSize).setFontWeight(isBold).setFontStyle(isItalic);
-        cell.setFontWeight(isBold).setFontStyle(isItalic).setHorizontalAlignment(currentHorizontalAlignment).setVerticalAlignment(currentVerticalAlignment);
-      }
-    }
-    if (command.includes("/Rotate")) {
+    // --- ROTATION / ALIGNMENT ---
+    if (command.split(/\s+/).indexOf(ROTATE_TOKEN) >= 0) {
       const rotationCandidate = parseRotationOperand(command);
       if (rotationCandidate !== null) {
         currentRotation = rotationCandidate;
       }
+      continue;
     }
-    if (command.includes("/Align")) {
-      let parts = command.trim().split(/\s+/);
-      let alignDirective = parts[1];
-      if (alignDirective && alignDirective.startsWith("H")) {
-        if (alignDirective === "HCenter") currentHorizontalAlignment = "center";
-        if (alignDirective === "HRight") currentHorizontalAlignment = "right";
-        if (alignDirective === "HLeft") currentHorizontalAlignment = "left";
+    if ((match = command.match(ALIGN_COMMAND_PATTERN))) {
+      let alignDirective = match[1];
+      if (alignDirective === "HCenter") currentHorizontalAlignment = "center";
+      if (alignDirective === "HRight") currentHorizontalAlignment = "right";
+      if (alignDirective === "HLeft") currentHorizontalAlignment = "left";
+      if (alignDirective === "VMiddle") currentVerticalAlignment = "middle";
+      if (alignDirective === "VBottom") currentVerticalAlignment = "bottom";
+      if (alignDirective === "VTop") currentVerticalAlignment = "top";
+      continue;
+    }
+
+    // --- COLORS ---
+    if ((match = command.match(FILL_COLOR_PATTERN))) {
+      currentFillColor = rgbToHex(match[1]*255, match[2]*255, match[3]*255);
+      continue;
+    }
+    if ((match = command.match(STROKE_COLOR_PATTERN))) {
+      currentStrokeColor = rgbToHex(match[1]*255, match[2]*255, match[3]*255);
+      continue;
+    }
+
+    // --- TYPOGRAPHY ---
+    if ((match = command.match(FONT_COMMAND_PATTERN))) {
+      isBold = match[1] === "2" ? "bold" : "normal";
+      isItalic = match[1] === "3" ? "italic" : "normal";
+      continue;
+    }
+    if ((match = command.match(UNDERLINE_PATTERN))) {
+      lineStyle = match[1] === "1" ? "underline" : "none";
+      continue;
+    }
+    if ((match = command.match(FONT_SIZE_PATTERN))) {
+      let parsedFontSize = parseFloat(match[1]);
+      currentFontSize = (!isNaN(parsedFontSize) && parsedFontSize > 0) ? parsedFontSize : defaultFontSize;
+      continue;
+    }
+    if ((match = command.match(ALIGN_CODE_PATTERN))) {
+      let alignmentCode = parseInt(match[1]);
+      if (alignmentCode === 0) currentHorizontalAlignment = "left";
+      if (alignmentCode === 1) currentHorizontalAlignment = "center";
+      if (alignmentCode === 2) currentHorizontalAlignment = "right";
+      if (alignmentCode === 3) currentVerticalAlignment = "top";
+      if (alignmentCode === 4) currentVerticalAlignment = "middle";
+      if (alignmentCode === 5) currentVerticalAlignment = "bottom";
+      if (alignmentCode >= 6) {
+        currentHorizontalAlignment = defaultHorizontalAlignment;
+        currentVerticalAlignment = defaultVerticalAlignment;
       }
-      if (alignDirective && alignDirective.startsWith("V")) {
-        if (alignDirective === "VMiddle") currentVerticalAlignment = "middle";
-        if (alignDirective === "VBottom") currentVerticalAlignment = "bottom";
-        if (alignDirective === "VTop") currentVerticalAlignment = "top";
-      }
+      continue;
     }
-    if (command.includes("rg")) {
-      let parts = command.split(" ");
-      currentFillColor = rgbToHex(parts[0]*255, parts[1]*255, parts[2]*255);
-    }
-    if (/\bSC\b/.test(command)) {
-      let parts = command.trim().split(/\s+/);
-      let scIndex = parts.indexOf("SC");
-      if (scIndex >= 3) {
-        currentStrokeColor = rgbToHex(parts[scIndex-3]*255, parts[scIndex-2]*255, parts[scIndex-1]*255);
-      }
-    }
-    if (command.includes("Tf")) {
-      isBold = command.includes("/F2") ? "bold" : "normal";
-      isItalic = command.includes("/F3") ? "italic" : "normal";
-    }
-    if (/\bTs\b/.test(command)) {
-      let fontSizeMatch = command.match(/([+-]?\d*\.?\d+)\s+Ts\b/);
-      if (fontSizeMatch) {
-        let parsedFontSize = parseFloat(fontSizeMatch[1]);
-        currentFontSize = (!isNaN(parsedFontSize) && parsedFontSize > 0) ? parsedFontSize : defaultFontSize;
-      } else {
-        currentFontSize = defaultFontSize;
-      }
-    }
-    if (command.includes("Tr")) {
-      lineStyle = command.startsWith("1") ? "underline" : "none";
-    }
-    if (command.match(/\d+\s+TA/)) {
-      let match = command.match(/(\d+)\s+TA/);
-      if (match) {
-        let alignmentCode = parseInt(match[1]);
-        if (alignmentCode === 0) currentHorizontalAlignment = "left";
-        if (alignmentCode === 1) currentHorizontalAlignment = "center";
-        if (alignmentCode === 2) currentHorizontalAlignment = "right";
-        if (alignmentCode === 3) currentVerticalAlignment = "top";
-        if (alignmentCode === 4) currentVerticalAlignment = "middle";
-        if (alignmentCode === 5) currentVerticalAlignment = "bottom";
-        if (alignmentCode >= 6) {
-          currentHorizontalAlignment = defaultHorizontalAlignment;
-          currentVerticalAlignment = defaultVerticalAlignment;
-        }
-      }
-    }
-    if (command.includes("Td")) {
-      let parts = command.trim().split(/\s+/);
-      let deltaX = parseFloat(parts[0]);
-      let deltaY = parseFloat(parts[1]);
+
+    // --- CURSOR ---
+    if ((match = command.match(TD_PATTERN))) {
+      let deltaX = parseFloat(match[1]);
+      let deltaY = parseFloat(match[2]);
       if (!isNaN(deltaX) && !isNaN(deltaY)) {
         currentX += Math.trunc(deltaX / 10);
         currentY += Math.trunc(deltaY / 10);
       }
+      continue;
     }
-    if (command.includes("/MoveTo")) {
-      let parts = command.split(" ");
-      let targetX = parseInt(parts[1]);
-      let targetY = parseInt(parts[2]);
+    if ((match = command.match(MOVE_TO_PATTERN))) {
+      let targetX = parseInt(match[1]);
+      let targetY = parseInt(match[2]);
 
-      if (!isNaN(targetX) && !isNaN(targetY)) {
-        let maxX = pageWidth > 0 ? pageWidth : maxCols;
-        let pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
+      let maxX = pageWidth > 0 ? pageWidth : maxCols;
+      let pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
 
-        targetX = Math.max(1, Math.min(maxX, targetX));
-        targetY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
-
-        currentX = targetX;
-        currentY = targetY;
-      }
+      currentX = Math.max(1, Math.min(maxX, targetX));
+      currentY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
+      continue;
     }
-    const textValue = parseTextCommand(command);
-    if (textValue !== null) {
-         if (currentY > 0 && currentX > 0) {
-           let cell = renderSheet.getRange(currentY, currentX);
-           cell.setValue(textValue);
-           cell.setFontColor(currentFillColor)
-               .setFontSize(currentFontSize)
-               .setFontWeight(isBold)
-               .setFontStyle(isItalic)
-               .setFontLine(lineStyle)
-               .setTextRotation(currentRotation)
-               .setHorizontalAlignment(currentHorizontalAlignment)
-               .setVerticalAlignment(currentVerticalAlignment);
-         }
-    }
+
+    Logger.log(`Skipped unrecognized command: ${command}`);
   }
 }
-
-const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
-const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
 
 function isExactOperator(command, operator) {
   return command === operator;
@@ -320,19 +335,19 @@ function parseTextCommand(command) {
   return textMatch ? textMatch[1] : null;
 }
 
-  function drawPage(sheet, topRow, width, height, borderStyle) {
-    let pageRange = sheet.getRange(topRow, 1, height, width);
-    pageRange.setBackground("white");
-    pageRange.setBorder(true, true, true, true, false, false, "black", borderStyle || mapLineWidth(3));
-  }
+function drawPage(sheet, topRow, width, height, borderStyle) {
+  let pageRange = sheet.getRange(topRow, 1, height, width);
+  pageRange.setBackground("white");
+  pageRange.setBorder(true, true, true, true, false, false, "black", borderStyle || mapLineWidth(3));
+}
 
-  function drawPageIfValid(sheet, topRow, width, height, borderStyle) {
-    if (width > 0 && height > 0) {
-      drawPage(sheet, topRow, width, height, borderStyle);
-    } else {
-      Logger.log(`Skipping page draw due to non-positive dimensions: width=${width}, height=${height}`);
-    }
+function drawPageIfValid(sheet, topRow, width, height, borderStyle) {
+  if (width > 0 && height > 0) {
+    drawPage(sheet, topRow, width, height, borderStyle);
+  } else {
+    Logger.log(`Skipping page draw due to non-positive dimensions: width=${width}, height=${height}`);
   }
+}
 
 function rgbToHex(r, g, b) {
   return "#" + ((1 << 24) + (Math.floor(r) << 16) + (Math.floor(g) << 8) + Math.floor(b)).toString(16).slice(1);

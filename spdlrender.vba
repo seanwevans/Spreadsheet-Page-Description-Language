@@ -2,6 +2,28 @@
 ' Paste this module into the VBA editor (ALT+F11) and run RenderSPDL.
 Option Explicit
 
+' Anchored command patterns. Every SPDL command must match one of these
+' exactly; substring checks are never used for dispatch so that text content
+' such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
+Private Const TEXT_COMMAND_PATTERN As String = "^\((.*)\)\s+Tj\s*$"
+Private Const LINK_COMMAND_PATTERN As String = "^\(([^)]*)\)\s+\(([^)]*)\)\s+/Link$"
+Private Const INSERT_IMAGE_PATTERN As String = "^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+/InsertImage$"
+Private Const NOTE_COMMAND_PATTERN As String = "^\(([^)]*)\)\s+/Note$"
+Private Const DROPDOWN_COMMAND_PATTERN As String = "^\(([^)]*)\)\s+/Dropdown$"
+Private Const MEDIABOX_PATTERN As String = "^(\d+)\s+(\d+)\s+MediaBox$"
+Private Const LINE_WIDTH_PATTERN As String = "^(\d+)\s+w$"
+Private Const RECTANGLE_COMMAND_PATTERN As String = "^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$"
+Private Const PIXEL_ART_PATTERN As String = "^(\d+)\s+(\d+)\s+ID\s+(\S+)$"
+Private Const ALIGN_COMMAND_PATTERN As String = "^/Align\s+(\S+)$"
+Private Const FILL_COLOR_PATTERN As String = "^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$"
+Private Const STROKE_COLOR_PATTERN As String = "^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$"
+Private Const FONT_COMMAND_PATTERN As String = "^/F(\d+)(\s+\d+(\.\d+)?)?\s+Tf$"
+Private Const UNDERLINE_PATTERN As String = "^([01])\s+Tr$"
+Private Const FONT_SIZE_PATTERN As String = "^([+-]?\d*\.?\d+)\s+Ts$"
+Private Const ALIGN_CODE_PATTERN As String = "^(\d+)\s+TA$"
+Private Const TD_PATTERN As String = "^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$"
+Private Const MOVE_TO_PATTERN As String = "^/MoveTo\s+(-?\d+)\s+(-?\d+)$"
+
 Public Sub RenderSPDL()
     Dim sourceSheet As Worksheet
     Dim renderSheet As Worksheet
@@ -63,82 +85,92 @@ Public Sub RenderSPDL()
     Dim hAlign As XlHAlign: hAlign = xlHAlignLeft
     Dim vAlign As XlVAlign: vAlign = xlVAlignTop
 
+    Dim m As Object
     Dim i As Long
     For i = 1 To commandCount
         Dim command As String
         command = Trim$(CStr(sourceSheet.Cells(i + 1, 1).Value))
         If Len(command) = 0 Then GoTo NextCommand
 
+        ' --- TEXT --- (parsed first so text content can never be misread as an operator)
+        Set m = ExecPattern(command, TEXT_COMMAND_PATTERN)
+        If Not m Is Nothing Then
+            With renderSheet.Cells(currentY, currentX)
+                .Value = m.SubMatches(0)
+                ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
+                .Orientation = currentRotation
+                .HorizontalAlignment = hAlign
+                .VerticalAlignment = vAlign
+            End With
+            GoTo NextCommand
+        End If
+
+        ' --- LINKS ---
+        Set m = ExecPattern(command, LINK_COMMAND_PATTERN)
+        If Not m Is Nothing Then
+            With renderSheet.Cells(currentY, currentX)
+                .Hyperlinks.Delete
+                renderSheet.Hyperlinks.Add Anchor:=renderSheet.Cells(currentY, currentX), Address:=m.SubMatches(0), TextToDisplay:=m.SubMatches(1)
+                ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
+                .HorizontalAlignment = hAlign
+                .VerticalAlignment = vAlign
+            End With
+            GoTo NextCommand
+        End If
+
         ' --- IMAGE (InsertImage) ---
-        If InStr(command, "/InsertImage") > 0 Then
-            Dim urlMatch As Object
-            Set urlMatch = CreateObject("VBScript.RegExp")
-            urlMatch.Pattern = "\(([^)]+)\)"
-            If urlMatch.test(command) Then
-                Dim url As String
-                url = urlMatch.Execute(command)(0).SubMatches(0)
-                Dim parts() As String
-                parts = Split(Replace(command, "(" & url & ")", vbNullString), " ")
-                Dim w As Double, h As Double
-                w = CDbl(parts(0)): h = CDbl(parts(1))
-                On Error Resume Next
-                renderSheet.Shapes.AddPicture url, msoFalse, msoTrue, _
-                    renderSheet.Cells(currentY, currentX).Left, _
-                    renderSheet.Cells(currentY, currentX).Top, _
-                    w, h
-                On Error GoTo 0
-            End If
+        Set m = ExecPattern(command, INSERT_IMAGE_PATTERN)
+        If Not m Is Nothing Then
+            Dim w As Double, h As Double
+            w = Val(m.SubMatches(0)): h = Val(m.SubMatches(1))
+            On Error Resume Next
+            renderSheet.Shapes.AddPicture m.SubMatches(2), msoFalse, msoTrue, _
+                renderSheet.Cells(currentY, currentX).Left, _
+                renderSheet.Cells(currentY, currentX).Top, _
+                w, h
+            On Error GoTo 0
             GoTo NextCommand
         End If
 
         ' --- ANNOTATIONS (/Note) ---
-        If InStr(command, "/Note") > 0 Then
-            Dim noteMatch As Object
-            Set noteMatch = CreateObject("VBScript.RegExp")
-            noteMatch.Pattern = "\(([^)]+)\)"
-            If noteMatch.test(command) Then
-                renderSheet.Cells(currentY, currentX).NoteText noteMatch.Execute(command)(0).SubMatches(0)
-            End If
+        Set m = ExecPattern(command, NOTE_COMMAND_PATTERN)
+        If Not m Is Nothing Then
+            renderSheet.Cells(currentY, currentX).NoteText m.SubMatches(0)
             GoTo NextCommand
         End If
 
         ' --- ACROFORMS ---
-        If InStr(command, "/CheckBox") > 0 Then
+        If IsExactOperator(command, "/CheckBox") Then
             With renderSheet.Cells(currentY, currentX)
-                .Value = "☐"
+                .Value = ChrW(9744) ' ballot box
                 .HorizontalAlignment = xlCenter
                 .VerticalAlignment = xlCenter
             End With
             GoTo NextCommand
         End If
 
-        If InStr(command, "/Dropdown") > 0 Then
-            Dim dropMatch As Object
-            Set dropMatch = CreateObject("VBScript.RegExp")
-            dropMatch.Pattern = "\(([^)]+)\)"
-            If dropMatch.test(command) Then
-                Dim options As String
-                options = dropMatch.Execute(command)(0).SubMatches(0)
-                With renderSheet.Cells(currentY, currentX).Resize(1, 6)
-                    .Merge
-                    .Validation.Delete
-                    .Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=options
-                    .Value = Split(options, ",")(0)
-                    .Interior.Color = RGB(255, 242, 204)
-                    .HorizontalAlignment = xlCenter
-                    .VerticalAlignment = xlCenter
-                    SetAllBorders .Borders, currentStrokeColor, currentLineStyle, currentLineWeight
-                End With
-            End If
+        Set m = ExecPattern(command, DROPDOWN_COMMAND_PATTERN)
+        If Not m Is Nothing Then
+            Dim options As String
+            options = m.SubMatches(0)
+            With renderSheet.Cells(currentY, currentX).Resize(1, 6)
+                .Merge
+                .Validation.Delete
+                .Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:=options
+                .Value = Split(options, ",")(0)
+                .Interior.Color = RGB(255, 242, 204)
+                .HorizontalAlignment = xlCenter
+                .VerticalAlignment = xlCenter
+                SetAllBorders .Borders, currentStrokeColor, currentLineStyle, currentLineWeight
+            End With
             GoTo NextCommand
         End If
 
         ' --- PAGE SETUP ---
-        If InStr(command, "MediaBox") > 0 Then
-            Dim mbParts() As String
-            mbParts = Split(command, " ")
-            pageWidth = CLng(mbParts(0))
-            pageHeight = CLng(mbParts(1))
+        Set m = ExecPattern(command, MEDIABOX_PATTERN)
+        If Not m Is Nothing Then
+            pageWidth = CLng(m.SubMatches(0))
+            pageHeight = CLng(m.SubMatches(1))
             If pageWidth > 0 And pageHeight > 0 Then
                 mediaBoxApplied = True
                 DrawPage renderSheet, pageTopRow, pageWidth, pageHeight, currentLineStyle, currentLineWeight
@@ -159,9 +191,10 @@ Public Sub RenderSPDL()
         End If
 
         ' --- LINE WIDTH ---
-        If command Like "* w*" Then
-            currentLineStyle = MapLineWidth(CInt(Split(command)(0)))
-            currentLineWeight = MapLineWeight(CInt(Split(command)(0)))
+        Set m = ExecPattern(command, LINE_WIDTH_PATTERN)
+        If Not m Is Nothing Then
+            currentLineStyle = MapLineWidth(CInt(m.SubMatches(0)))
+            currentLineWeight = MapLineWeight(CInt(m.SubMatches(0)))
             GoTo NextCommand
         End If
 
@@ -187,12 +220,11 @@ Public Sub RenderSPDL()
         End If
 
         ' --- PIXEL IMAGES ---
-        If InStr(command, " ID") > 0 Then
-            Dim idParts() As String
-            idParts = Split(command, " ")
-            Dim widthPx As Long: widthPx = CLng(idParts(0))
-            Dim heightPx As Long: heightPx = CLng(idParts(1))
-            Dim pixelData As String: pixelData = idParts(3)
+        Set m = ExecPattern(command, PIXEL_ART_PATTERN)
+        If Not m Is Nothing Then
+            Dim widthPx As Long: widthPx = CLng(m.SubMatches(0))
+            Dim heightPx As Long: heightPx = CLng(m.SubMatches(1))
+            Dim pixelData As String: pixelData = m.SubMatches(2)
             If Len(pixelData) >= widthPx * heightPx Then
                 Dim rr As Long, cc As Long
                 For rr = 0 To heightPx - 1
@@ -200,6 +232,7 @@ Public Sub RenderSPDL()
                         Dim code As String
                         code = Mid$(pixelData, (rr * widthPx) + cc + 1, 1)
                         Dim pixelColor As Variant
+                        pixelColor = Empty
                         If code = "1" Then pixelColor = RGB(0, 0, 0)
                         If code = "2" Then pixelColor = RGB(241, 196, 15)
                         If code = "3" Then pixelColor = RGB(231, 76, 60)
@@ -212,32 +245,8 @@ Public Sub RenderSPDL()
             GoTo NextCommand
         End If
 
-        ' --- LINKS & TEXT ---
-        If InStr(command, "/Link") > 0 Then
-            Dim linkMatches As Object
-            Set linkMatches = CreateObject("VBScript.RegExp")
-            linkMatches.Pattern = "\(([^)]+)\)"
-            If linkMatches.test(command) Then
-                Dim urlLabel() As String
-                ReDim urlLabel(linkMatches.Execute(command).Count - 1)
-                Dim idx As Long
-                For idx = 0 To UBound(urlLabel)
-                    urlLabel(idx) = linkMatches.Execute(command)(idx).SubMatches(0)
-                Next idx
-                If UBound(urlLabel) >= 1 Then
-                    With renderSheet.Cells(currentY, currentX)
-                        .Hyperlinks.Delete
-                        renderSheet.Hyperlinks.Add Anchor:=renderSheet.Cells(currentY, currentX), Address:=urlLabel(0), TextToDisplay:=urlLabel(1)
-                        ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
-                        .HorizontalAlignment = hAlign
-                        .VerticalAlignment = vAlign
-                    End With
-                End If
-            End If
-            GoTo NextCommand
-        End If
-
-        If InStr(command, "/Rotate") > 0 Then
+        ' --- ROTATION / ALIGNMENT ---
+        If HasRotateToken(command) Then
             Dim parsedRotation As Long
             If TryParseRotationOperand(command, parsedRotation) Then
                 currentRotation = parsedRotation
@@ -246,52 +255,57 @@ Public Sub RenderSPDL()
             GoTo NextCommand
         End If
 
-        If InStr(command, "/Align") > 0 Then
-            Dim alignParts() As String
-            alignParts = Split(command, " ")
-            If UBound(alignParts) >= 1 Then
-                Select Case alignParts(1)
-                    Case "HCenter": hAlign = xlHAlignCenter
-                    Case "HRight": hAlign = xlHAlignRight
-                    Case "HLeft": hAlign = xlHAlignLeft
-                    Case "VMiddle": vAlign = xlVAlignCenter
-                    Case "VBottom": vAlign = xlVAlignBottom
-                    Case "VTop": vAlign = xlVAlignTop
-                End Select
-            End If
+        Set m = ExecPattern(command, ALIGN_COMMAND_PATTERN)
+        If Not m Is Nothing Then
+            Select Case m.SubMatches(0)
+                Case "HCenter": hAlign = xlHAlignCenter
+                Case "HRight": hAlign = xlHAlignRight
+                Case "HLeft": hAlign = xlHAlignLeft
+                Case "VMiddle": vAlign = xlVAlignCenter
+                Case "VBottom": vAlign = xlVAlignBottom
+                Case "VTop": vAlign = xlVAlignTop
+            End Select
             GoTo NextCommand
         End If
 
-        If InStr(command, " rg") > 0 Then
-            Dim rgParts() As String
-            rgParts = Split(command, " ")
-            currentFillColor = RGB(CInt(rgParts(0) * 255), CInt(rgParts(1) * 255), CInt(rgParts(2) * 255))
+        ' --- COLORS ---
+        Set m = ExecPattern(command, FILL_COLOR_PATTERN)
+        If Not m Is Nothing Then
+            currentFillColor = RGB(CInt(Val(m.SubMatches(0)) * 255), CInt(Val(m.SubMatches(1)) * 255), CInt(Val(m.SubMatches(2)) * 255))
             GoTo NextCommand
         End If
 
-        If InStr(command, " SC") > 0 Then
-            Dim scParts() As String
-            scParts = Split(command, " ")
-            Dim scIndex As Long
-            scIndex = UBound(scParts)
-            currentStrokeColor = RGB(CInt(scParts(scIndex - 3) * 255), CInt(scParts(scIndex - 2) * 255), CInt(scParts(scIndex - 1) * 255))
+        Set m = ExecPattern(command, STROKE_COLOR_PATTERN)
+        If Not m Is Nothing Then
+            currentStrokeColor = RGB(CInt(Val(m.SubMatches(0)) * 255), CInt(Val(m.SubMatches(1)) * 255), CInt(Val(m.SubMatches(2)) * 255))
             GoTo NextCommand
         End If
 
-        If InStr(command, "Tf") > 0 Then
-            isBold = InStr(command, "/F2") > 0
-            isItalic = InStr(command, "/F3") > 0
+        ' --- TYPOGRAPHY ---
+        Set m = ExecPattern(command, FONT_COMMAND_PATTERN)
+        If Not m Is Nothing Then
+            isBold = m.SubMatches(0) = "2"
+            isItalic = m.SubMatches(0) = "3"
             GoTo NextCommand
         End If
 
-        If InStr(command, "Tr") > 0 Then
-            underline = Left$(command, 1) = "1"
+        Set m = ExecPattern(command, UNDERLINE_PATTERN)
+        If Not m Is Nothing Then
+            underline = m.SubMatches(0) = "1"
             GoTo NextCommand
         End If
 
-        If command Like "* TA" Then
+        Set m = ExecPattern(command, FONT_SIZE_PATTERN)
+        If Not m Is Nothing Then
+            currentFontSize = Val(m.SubMatches(0))
+            If currentFontSize <= 0 Then currentFontSize = defaultFontSize
+            GoTo NextCommand
+        End If
+
+        Set m = ExecPattern(command, ALIGN_CODE_PATTERN)
+        If Not m Is Nothing Then
             Dim alignmentCode As Long
-            alignmentCode = CLng(Split(command)(0))
+            alignmentCode = CLng(m.SubMatches(0))
             Select Case alignmentCode
                 Case 0: hAlign = xlHAlignLeft
                 Case 1: hAlign = xlHAlignCenter
@@ -306,56 +320,55 @@ Public Sub RenderSPDL()
             GoTo NextCommand
         End If
 
-        If InStr(command, "Ts") > 0 Then
-            Dim tsParts() As String
-            tsParts = Split(command, " ")
-            Dim tsIndex As Long
-            tsIndex = UBound(tsParts)
-            currentFontSize = CDbl(tsParts(tsIndex - 1))
+        ' --- CURSOR ---
+        Set m = ExecPattern(command, TD_PATTERN)
+        If Not m Is Nothing Then
+            currentX = currentX + CLng(Fix(Val(m.SubMatches(0)) / 10))
+            currentY = currentY + CLng(Fix(Val(m.SubMatches(1)) / 10))
             GoTo NextCommand
         End If
 
-        If InStr(command, " Td") > 0 Then
-            Dim tdParts() As String
-            tdParts = Split(command, " ")
-            Dim deltaX As Double
-            Dim deltaY As Double
-            deltaX = CDbl(tdParts(0))
-            deltaY = CDbl(tdParts(1))
-            currentX = currentX + CLng(Fix(deltaX / 10))
-            currentY = currentY + CLng(Fix(deltaY / 10))
-            GoTo NextCommand
-        End If
-
-        If InStr(command, "/MoveTo") > 0 Then
-            Dim mvParts() As String
-            mvParts = Split(command, " ")
-            Dim targetX As Long: targetX = CLng(mvParts(1))
-            Dim targetY As Long: targetY = CLng(mvParts(2))
+        Set m = ExecPattern(command, MOVE_TO_PATTERN)
+        If Not m Is Nothing Then
+            Dim targetX As Long: targetX = CLng(m.SubMatches(0))
+            Dim targetY As Long: targetY = CLng(m.SubMatches(1))
             Dim maxX As Long: maxX = IIf(pageWidth > 0, pageWidth, maxCols)
             Dim pageBottom As Long: pageBottom = IIf(pageHeight > 0, pageTopRow + pageHeight - 1, maxRows)
-            targetX = WorksheetFunction.Max(1, WorksheetFunction.Min(maxX, targetX))
-            targetY = WorksheetFunction.Max(pageTopRow, WorksheetFunction.Min(pageBottom, pageTopRow + targetY - 1))
-            currentX = targetX
-            currentY = targetY
+            currentX = WorksheetFunction.Max(1, WorksheetFunction.Min(maxX, targetX))
+            currentY = WorksheetFunction.Max(pageTopRow, WorksheetFunction.Min(pageBottom, pageTopRow + targetY - 1))
             GoTo NextCommand
         End If
 
-        Dim textValue As String
-        If ParseTextCommand(command, textValue) Then
-                With renderSheet.Cells(currentY, currentX)
-                    .Value = textValue
-                    ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
-                    .Orientation = currentRotation
-                    .HorizontalAlignment = hAlign
-                    .VerticalAlignment = vAlign
-                End With
-            GoTo NextCommand
-        End If
+        Debug.Print "Skipped unrecognized command: " & command
 
 NextCommand:
     Next i
 End Sub
+
+Private Function ExecPattern(ByVal command As String, ByVal pattern As String) As Object
+    Static re As Object
+    If re Is Nothing Then Set re = CreateObject("VBScript.RegExp")
+    re.Global = False
+    re.Pattern = pattern
+    If re.test(command) Then
+        Set ExecPattern = re.Execute(command)(0)
+    Else
+        Set ExecPattern = Nothing
+    End If
+End Function
+
+Private Function HasRotateToken(ByVal command As String) As Boolean
+    Dim parts() As String
+    parts = Split(Trim$(command))
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        If parts(i) = "/Rotate" Then
+            HasRotateToken = True
+            Exit Function
+        End If
+    Next i
+    HasRotateToken = False
+End Function
 
 Private Sub DrawPage(ByVal sheet As Worksheet, ByVal topRow As Long, ByVal width As Long, ByVal height As Long, ByVal borderStyle As XlLineStyle, ByVal borderWeight As XlBorderWeight)
     If width <= 0 Or height <= 0 Then Exit Sub
@@ -438,12 +451,12 @@ Private Function TryParseRotationOperand(ByVal command As String, ByRef rotation
 
     For i = 1 To candidateCount
         If IsNumeric(candidates(i)) Then
-            rotationValue = CLng(CDbl(candidates(i)))
+            rotationValue = CLng(Fix(CDbl(candidates(i))))
             TryParseRotationOperand = True
             Exit Function
         End If
     Next i
-    
+
     TryParseRotationOperand = False
 End Function
 
@@ -452,28 +465,24 @@ Private Function IsExactOperator(ByVal command As String, ByVal expectedOperator
 End Function
 
 Private Function ParseRectangleCommand(ByVal command As String, ByRef x As Long, ByRef y As Long, ByRef w As Long, ByRef h As Long) As Boolean
-    Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Pattern = "^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$"
-
-    If Not re.test(command) Then Exit Function
+    Dim m As Object
+    Set m = ExecPattern(command, RECTANGLE_COMMAND_PATTERN)
+    If m Is Nothing Then Exit Function
 
     Dim parts() As String
     parts = Split(Trim$(command))
-    x = CLng(Fix(CDbl(parts(0))))
-    y = CLng(Fix(CDbl(parts(1))))
-    w = CLng(Fix(CDbl(parts(2))))
-    h = CLng(Fix(CDbl(parts(3))))
+    x = CLng(Fix(Val(parts(0))))
+    y = CLng(Fix(Val(parts(1))))
+    w = CLng(Fix(Val(parts(2))))
+    h = CLng(Fix(Val(parts(3))))
     ParseRectangleCommand = True
 End Function
 
 Private Function ParseTextCommand(ByVal command As String, ByRef value As String) As Boolean
-    Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Pattern = "^\((.*)\)\s+Tj\s*$"
+    Dim m As Object
+    Set m = ExecPattern(command, TEXT_COMMAND_PATTERN)
+    If m Is Nothing Then Exit Function
 
-    If Not re.test(command) Then Exit Function
-
-    value = re.Execute(command)(0).SubMatches(0)
+    value = m.SubMatches(0)
     ParseTextCommand = True
 End Function
