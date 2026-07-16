@@ -126,7 +126,7 @@ Copy `spdlrender.airtable.config.json` and fill in your values:
 node spdlrender.airtable.js spdlrender.airtable.config.json
 ```
 
-When `truncateTable` is enabled the script deletes existing records in batches of 10 to respect Airtable limits. It then batches upserts (default 10 records/request) with a ~200 ms delay to stay under the ~5 req/s API throttle.
+When `truncateTable` is enabled the script deletes existing records in batches of 10 to respect Airtable limits. It then batches upserts (default 10 records/request; values above 10 are clamped to Airtable's per-request limit) with a ~200 ms delay to stay under the ~5 req/s API throttle. Rate-limited (HTTP 429) responses are retried automatically, honoring the `Retry-After` header.
 
 ### Supported SPDL commands and constraints
 - `MediaBox`, `/NewPage`, `/MoveTo`, `Td` — cursor and paging; Y is clamped to the last defined page height.
