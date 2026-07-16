@@ -98,7 +98,7 @@ function main(workbook: ExcelScript.Workbook) {
         const label = match[2];
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           const cell = getCell(renderSheet, currentX, currentY);
-          cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
+          cell.setFormula(`=HYPERLINK("${escapeFormulaString(url)}", "${escapeFormulaString(label)}")`);
           applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
         } else {
           console.log(`Skipping link outside canvas at (${currentX}, ${currentY}): ${command}`);
@@ -409,6 +409,12 @@ function drawPageIfValid(
 
 function isInsideCanvas(x: number, y: number, maxRows: number, maxCols: number): boolean {
   return x >= 1 && x <= maxCols && y >= 1 && y <= maxRows;
+}
+
+// Doubles quotes so URL/label content stays inside the HYPERLINK formula's
+// string literal instead of breaking the formula or injecting a new one.
+function escapeFormulaString(value: string): string {
+  return value.replace(/"/g, '""');
 }
 
 function clampRect(x: number, y: number, w: number, h: number, maxRows: number, maxCols: number): { x: number; y: number; w: number; h: number } | null {

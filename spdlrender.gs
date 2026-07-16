@@ -111,7 +111,7 @@ function renderPDF() {
         let label = match[2];
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           let cell = renderSheet.getRange(currentY, currentX);
-          cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
+          cell.setFormula(`=HYPERLINK("${escapeFormulaString(url)}", "${escapeFormulaString(label)}")`);
           cell.setFontColor(currentFillColor)
               .setFontSize(currentFontSize)
               .setFontWeight(isBold)
@@ -342,6 +342,12 @@ function isExactOperator(command, operator) {
 
 function isInsideCanvas(x, y, maxRows, maxCols) {
   return x >= 1 && x <= maxCols && y >= 1 && y <= maxRows;
+}
+
+// Doubles quotes so URL/label content stays inside the HYPERLINK formula's
+// string literal instead of breaking the formula or injecting a new one.
+function escapeFormulaString(value) {
+  return String(value).replace(/"/g, '""');
 }
 
 function clampRect(x, y, w, h, maxRows, maxCols) {
