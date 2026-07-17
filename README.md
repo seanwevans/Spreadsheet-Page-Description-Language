@@ -276,6 +276,9 @@ S
 S
 ```
 
+## Contributing
+See [CONTRIBUTING.md](CONTRIBUTING.md) — in short: `npm test` must pass, semantics changes update SPEC.md + the reference parser + golden files together, and commands are always matched with anchored patterns.
+
 ## Tips and Limitations
 - The renderer clamps `/MoveTo` coordinates within the current page and sheet bounds to avoid errors.
 - Page drawing requires valid positive dimensions; invalid `MediaBox` values are skipped with a log message.
