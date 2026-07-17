@@ -71,35 +71,43 @@ function main(workbook: ExcelScript.Workbook) {
   for (const rawCommand of commands) {
     const command = rawCommand.trim();
     if (!command) continue;
+    let match: RegExpMatchArray | null;
+
+    // --- TEXT --- (parsed first so text content can never be misread as an operator)
+    if ((match = command.match(TEXT_COMMAND_PATTERN))) {
+      const cell = getCell(renderSheet, currentX, currentY);
+      cell.setValue(match[1]);
+      applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
+      continue;
+    }
+
+    // --- LINKS ---
+    if ((match = command.match(LINK_COMMAND_PATTERN))) {
+      const url = match[1];
+      const label = match[2];
+      const cell = getCell(renderSheet, currentX, currentY);
+      cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
+      applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
+      continue;
+    }
 
     // --- IMAGE (InsertImage) ---
-    if (command.includes("/InsertImage")) {
-      const match = command.match(/\(([^)]+)\)/);
-      if (match) {
-        const url = match[1];
-        const remaining = command.replace(match[0], "");
-        const parts = remaining.trim().split(/\s+/);
-        const w = parseInt(parts[0], 10);
-        const h = parseInt(parts[1], 10);
-        // Office Scripts cannot directly fetch external images without base64 data.
-        // Leave a placeholder to avoid runtime errors.
-        console.log(`Skipping image insertion for ${url}; provide base64 to add images manually.`);
-      }
+    if ((match = command.match(INSERT_IMAGE_PATTERN))) {
+      // Office Scripts cannot directly fetch external images without base64 data.
+      // Leave a placeholder to avoid runtime errors.
+      console.log(`Skipping image insertion for ${match[3]}; provide base64 to add images manually.`);
       continue;
     }
 
     // --- ANNOTATIONS (/Note) ---
-    if (command.includes("/Note")) {
-      const match = command.match(/\(([^)]+)\)/);
-      if (match) {
-        const cell = getCell(renderSheet, currentX, currentY);
-        cell.addComment(match[1], "SPDL");
-      }
+    if ((match = command.match(NOTE_COMMAND_PATTERN))) {
+      const cell = getCell(renderSheet, currentX, currentY);
+      cell.addComment(match[1], "SPDL");
       continue;
     }
 
     // --- ACROFORMS ---
-    if (command.includes("/CheckBox")) {
+    if (isExactOperator(command, "/CheckBox")) {
       const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 1);
       range.setValue("☐");
       range.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
@@ -107,28 +115,24 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    if (command.includes("/Dropdown")) {
-      const match = command.match(/\(([^)]+)\)/);
-      if (match) {
-        const options = match[1].split(",").map(s => s.trim());
-        const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 6);
-        range.merge();
-        range.getDataValidation().setList(options);
-        range.setValue(options[0]);
-        const format = range.getFormat();
-        format.getFill().setColor("#FFF2CC");
-        format.setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
-        format.setVerticalAlignment(ExcelScript.VerticalAlignment.center);
-        setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
-      }
+    if ((match = command.match(DROPDOWN_COMMAND_PATTERN))) {
+      const options = match[1].split(",").map(s => s.trim());
+      const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 6);
+      range.merge();
+      range.getDataValidation().setList(options);
+      range.setValue(options[0]);
+      const format = range.getFormat();
+      format.getFill().setColor("#FFF2CC");
+      format.setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+      format.setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+      setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
       continue;
     }
 
     // --- PAGE SETUP ---
-    if (command.includes("MediaBox")) {
-      const parts = command.split(/\s+/);
-      const parsedWidth = parseInt(parts[0], 10);
-      const parsedHeight = parseInt(parts[1], 10);
+    if ((match = command.match(MEDIABOX_PATTERN))) {
+      const parsedWidth = parseInt(match[1], 10);
+      const parsedHeight = parseInt(match[2], 10);
       if (parsedWidth > 0 && parsedHeight > 0) {
         pageWidth = parsedWidth;
         pageHeight = parsedHeight;
@@ -154,9 +158,8 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     // --- LINE WIDTH ---
-    const lineWidthMatch = command.match(/^(\d+)\s+w\b/);
-    if (lineWidthMatch) {
-      const widthValue = parseInt(lineWidthMatch[1], 10);
+    if ((match = command.match(LINE_WIDTH_PATTERN))) {
+      const widthValue = parseInt(match[1], 10);
       currentLineWidth = mapLineWidth(widthValue);
       currentLineWeight = mapLineWeight(widthValue);
       continue;
@@ -186,11 +189,10 @@ function main(workbook: ExcelScript.Workbook) {
     }
 
     // --- PIXEL IMAGES ---
-    if (command.includes("ID")) {
-      const parts = command.split(/\s+/);
-      const width = parseInt(parts[0], 10);
-      const height = parseInt(parts[1], 10);
-      const pixelData = parts[3];
+    if ((match = command.match(PIXEL_ART_PATTERN))) {
+      const width = parseInt(match[1], 10);
+      const height = parseInt(match[2], 10);
+      const pixelData = match[3];
       if (pixelData && pixelData.length >= width * height) {
         for (let r = 0; r < height; r++) {
           for (let c = 0; c < width; c++) {
@@ -206,20 +208,8 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    // --- LINKS & TEXT ---
-    if (command.includes("/Link")) {
-      const matches = command.match(/\(([^)]+)\)/g);
-      if (matches && matches.length >= 2) {
-        const url = matches[0].replace(/[()]/g, "");
-        const label = matches[1].replace(/[()]/g, "");
-        const cell = getCell(renderSheet, currentX, currentY);
-        cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-        applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
-      }
-      continue;
-    }
-
-    if (command.includes("/Rotate")) {
+    // --- ROTATION / ALIGNMENT ---
+    if (command.split(/\s+/).indexOf("/Rotate") >= 0) {
       const rotationCandidate = parseRotationOperand(command);
       if (rotationCandidate !== null) {
         currentRotation = rotationCandidate;
@@ -227,51 +217,47 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    if (command.includes("/Align")) {
-      const parts = command.trim().split(/\s+/);
-      const alignDirective = parts[1];
-      if (alignDirective?.startsWith("H")) {
-        if (alignDirective === "HCenter") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
-        if (alignDirective === "HRight") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
-        if (alignDirective === "HLeft") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
-      }
-      if (alignDirective?.startsWith("V")) {
-        if (alignDirective === "VMiddle") currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
-        if (alignDirective === "VBottom") currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
-        if (alignDirective === "VTop") currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
-      }
+    if ((match = command.match(ALIGN_COMMAND_PATTERN))) {
+      const alignDirective = match[1];
+      if (alignDirective === "HCenter") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
+      if (alignDirective === "HRight") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
+      if (alignDirective === "HLeft") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
+      if (alignDirective === "VMiddle") currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
+      if (alignDirective === "VBottom") currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
+      if (alignDirective === "VTop") currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
       continue;
     }
 
-    if (command.includes("rg")) {
-      const parts = command.split(/\s+/);
-      currentFillColor = rgbToHex(parseFloat(parts[0]) * 255, parseFloat(parts[1]) * 255, parseFloat(parts[2]) * 255);
+    // --- COLORS ---
+    if ((match = command.match(FILL_COLOR_PATTERN))) {
+      currentFillColor = rgbToHex(parseFloat(match[1]) * 255, parseFloat(match[2]) * 255, parseFloat(match[3]) * 255);
       continue;
     }
 
-    if (/\bSC\b/.test(command)) {
-      const parts = command.trim().split(/\s+/);
-      const scIndex = parts.indexOf("SC");
-      if (scIndex >= 3) {
-        currentStrokeColor = rgbToHex(parseFloat(parts[scIndex - 3]) * 255, parseFloat(parts[scIndex - 2]) * 255, parseFloat(parts[scIndex - 1]) * 255);
-      }
+    if ((match = command.match(STROKE_COLOR_PATTERN))) {
+      currentStrokeColor = rgbToHex(parseFloat(match[1]) * 255, parseFloat(match[2]) * 255, parseFloat(match[3]) * 255);
       continue;
     }
 
-    if (command.includes("Tf")) {
-      isBold = command.includes("/F2");
-      isItalic = command.includes("/F3");
+    // --- TYPOGRAPHY ---
+    if ((match = command.match(FONT_COMMAND_PATTERN))) {
+      isBold = match[1] === "2";
+      isItalic = match[1] === "3";
       continue;
     }
 
-    if (command.includes("Tr")) {
-      underline = command.startsWith("1");
+    if ((match = command.match(UNDERLINE_PATTERN))) {
+      underline = match[1] === "1";
       continue;
     }
 
-    const taMatch = command.match(/(\d+)\s+TA/);
-    if (taMatch) {
-      const alignmentCode = parseInt(taMatch[1], 10);
+    if ((match = command.match(FONT_SIZE_PATTERN))) {
+      currentFontSize = parseInt(match[1], 10) || defaultFontSize;
+      continue;
+    }
+
+    if ((match = command.match(ALIGN_CODE_PATTERN))) {
+      const alignmentCode = parseInt(match[1], 10);
       if (alignmentCode === 0) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
       if (alignmentCode === 1) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
       if (alignmentCode === 2) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
@@ -285,19 +271,10 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    if (command.includes("Ts")) {
-      const parts = command.trim().split(/\s+/);
-      const sizeIndex = parts.indexOf("Ts");
-      if (sizeIndex >= 1) {
-        currentFontSize = parseInt(parts[sizeIndex - 1], 10) || defaultFontSize;
-      }
-      continue;
-    }
-
-    if (command.includes("Td")) {
-      const parts = command.trim().split(/\s+/);
-      const deltaX = parseFloat(parts[0]);
-      const deltaY = parseFloat(parts[1]);
+    // --- CURSOR ---
+    if ((match = command.match(TD_PATTERN))) {
+      const deltaX = parseFloat(match[1]);
+      const deltaY = parseFloat(match[2]);
       if (!isNaN(deltaX) && !isNaN(deltaY)) {
         currentX += Math.trunc(deltaX / 10);
         currentY += Math.trunc(deltaY / 10);
@@ -305,33 +282,41 @@ function main(workbook: ExcelScript.Workbook) {
       continue;
     }
 
-    if (command.includes("/MoveTo")) {
-      const parts = command.split(/\s+/);
-      let targetX = parseInt(parts[1], 10);
-      let targetY = parseInt(parts[2], 10);
-      if (!isNaN(targetX) && !isNaN(targetY)) {
-        const maxX = pageWidth > 0 ? pageWidth : maxCols;
-        const pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
-        targetX = Math.max(1, Math.min(maxX, targetX));
-        targetY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
-        currentX = targetX;
-        currentY = targetY;
-      }
+    if ((match = command.match(MOVE_TO_PATTERN))) {
+      const targetX = parseInt(match[1], 10);
+      const targetY = parseInt(match[2], 10);
+      const maxX = pageWidth > 0 ? pageWidth : maxCols;
+      const pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
+      currentX = Math.max(1, Math.min(maxX, targetX));
+      currentY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
       continue;
     }
 
-    const textValue = parseTextCommand(command);
-    if (textValue !== null) {
-        const cell = getCell(renderSheet, currentX, currentY);
-        cell.setValue(textValue);
-        applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
-      continue;
-    }
+    console.log(`Skipped unrecognized command: ${command}`);
   }
 }
 
-const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
+// Anchored command patterns. Every SPDL command must match one of these
+// exactly; substring checks are never used for dispatch so that text content
+// such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
 const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
+const LINK_COMMAND_PATTERN = /^\(([^)]*)\)\s+\(([^)]*)\)\s+\/Link$/;
+const INSERT_IMAGE_PATTERN = /^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+\/InsertImage$/;
+const NOTE_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Note$/;
+const DROPDOWN_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Dropdown$/;
+const MEDIABOX_PATTERN = /^(\d+)\s+(\d+)\s+MediaBox$/;
+const LINE_WIDTH_PATTERN = /^(\d+)\s+w$/;
+const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
+const PIXEL_ART_PATTERN = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
+const ALIGN_COMMAND_PATTERN = /^\/Align\s+(\S+)$/;
+const FILL_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
+const STROKE_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
+const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
+const UNDERLINE_PATTERN = /^([01])\s+Tr$/;
+const FONT_SIZE_PATTERN = /^([+-]?\d*\.?\d+)\s+Ts$/;
+const ALIGN_CODE_PATTERN = /^(\d+)\s+TA$/;
+const TD_PATTERN = /^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$/;
+const MOVE_TO_PATTERN = /^\/MoveTo\s+(-?\d+)\s+(-?\d+)$/;
 
 function isExactOperator(command: string, operator: string): boolean {
   return command === operator;

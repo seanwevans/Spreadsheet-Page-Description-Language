@@ -98,7 +98,12 @@ end normalizeText
 
 on processCommand(cmd, state, renderTable, logTable)
     set tokens to my splitText(cmd, " ")
-    if cmd contains "MediaBox" then
+    -- Text is checked first so text content can never be misread as an
+    -- operator, and MediaBox is matched as a trailing token rather than a
+    -- substring for the same reason.
+    if cmd starts with "(" and cmd ends with "Tj" then
+        return my handleText(cmd, state, renderTable)
+    else if cmd ends with "MediaBox" then
         return my handleMediaBox(tokens, state, renderTable)
     else if cmd is "/NewPage" then
         return my handleNewPage(state)
@@ -116,8 +121,6 @@ on processCommand(cmd, state, renderTable, logTable)
         return my handleFillPath(state, renderTable)
     else if cmd is "S" then
         return my handleStrokePath(state, renderTable)
-    else if cmd ends with "Tj" then
-        return my handleText(cmd, state, renderTable)
     else
         my logMessage(logTable, "Skipped unsupported command: " & cmd)
         return state

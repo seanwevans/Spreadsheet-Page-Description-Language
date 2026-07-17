@@ -116,6 +116,29 @@ function normalizeAlignment(code) {
   return map[code] || "";
 }
 
+// Anchored command patterns. Every SPDL command must match one of these
+// exactly; substring checks are never used for dispatch so that text content
+// such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
+const TEXT_RE = /^\((.*)\)\s+Tj$/;
+const LINK_RE = /^\(([^)]*)\)\s+\(([^)]*)\)\s+\/Link$/;
+const INSERT_IMAGE_RE = /^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+\/InsertImage$/;
+const NOTE_RE = /^\(([^)]*)\)\s+\/Note$/;
+const DROPDOWN_RE = /^\(([^)]*)\)\s+\/Dropdown$/;
+const MEDIABOX_RE = /^(\d+)\s+(\d+)\s+MediaBox$/;
+const LINE_WIDTH_RE = /^(\d+)\s+w$/;
+const RECT_RE = /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+re$/;
+const PIXEL_ART_RE = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
+const ROTATE_RE = /^\/Rotate\s+(-?\d+(?:\.\d+)?)$/;
+const ALIGN_RE = /^\/Align\s+(\S+)$/;
+const FILL_COLOR_RE = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
+const STROKE_COLOR_RE = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
+const FONT_RE = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
+const UNDERLINE_RE = /^([01])\s+Tr$/;
+const FONT_SIZE_RE = /^(\d+)\s+Ts$/;
+const ALIGN_CODE_RE = /^(\d+)\s+TA$/;
+const TD_RE = /^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$/;
+const MOVE_TO_RE = /^\/MoveTo\s+(-?\d+)\s+(-?\d+)$/;
+
 function parseSpdl(stream) {
   const lines = stream
     .split(/\r?\n/)
@@ -147,13 +170,28 @@ function parseSpdl(stream) {
   };
 
   for (const command of lines) {
+    let match;
+
+    // TEXT — parsed first so text content can never be misread as an operator.
+    if ((match = command.match(TEXT_RE))) {
+      enqueueCell(state.cursorX, state.cursorY, {
+        Value: match[1],
+        TextColor: state.fill,
+        Bold: state.bold,
+        Italic: state.italic,
+        Underline: state.underline,
+        Rotation: state.rotation,
+        Alignment: state.alignment,
+        StrokeWidth: state.strokeWidth,
+      });
+      continue;
+    }
+
     // IMAGE
-    if (command.includes("/InsertImage")) {
-      const match = command.match(/\(([^)]+)\)/);
-      const parts = command.replace(match?.[0] || "", "").trim().split(/\s+/);
-      const width = parseInt(parts[0], 10) || 0;
-      const height = parseInt(parts[1], 10) || 0;
-      const imageUrl = match?.[1] || "";
+    if ((match = command.match(INSERT_IMAGE_RE))) {
+      const width = parseInt(match[1], 10) || 0;
+      const height = parseInt(match[2], 10) || 0;
+      const imageUrl = match[3];
       enqueueCell(state.cursorX, state.cursorY, {
         Attachment: imageUrl ? [{ url: imageUrl }] : undefined,
         Value: imageUrl,
@@ -173,14 +211,13 @@ function parseSpdl(stream) {
     }
 
     // NOTE
-    if (command.includes("/Note")) {
-      const match = command.match(/\(([^)]+)\)/);
-      enqueueCell(state.cursorX, state.cursorY, { Note: match?.[1] || "" });
+    if ((match = command.match(NOTE_RE))) {
+      enqueueCell(state.cursorX, state.cursorY, { Note: match[1] });
       continue;
     }
 
     // CHECKBOX
-    if (command.includes("/CheckBox")) {
+    if (command === "/CheckBox") {
       enqueueCell(state.cursorX, state.cursorY, {
         Checkbox: true,
         Alignment: state.alignment || "VMiddle",
@@ -189,9 +226,8 @@ function parseSpdl(stream) {
     }
 
     // DROPDOWN
-    if (command.includes("/Dropdown")) {
-      const match = command.match(/\(([^)]+)\)/);
-      const options = match?.[1]?.split(",").map((s) => s.trim()) || [];
+    if ((match = command.match(DROPDOWN_RE))) {
+      const options = match[1].split(",").map((s) => s.trim());
       enqueueCell(state.cursorX, state.cursorY, {
         Dropdown: options[0] || "",
         Note: options.length ? `Options: ${options.join(", ")}` : undefined,
@@ -202,14 +238,13 @@ function parseSpdl(stream) {
     }
 
     // PAGE
-    if (command.includes("MediaBox")) {
-      const parts = command.split(/\s+/);
-      state.pageWidth = parseInt(parts[0], 10) || 0;
-      state.pageHeight = parseInt(parts[1], 10) || 0;
+    if ((match = command.match(MEDIABOX_RE))) {
+      state.pageWidth = parseInt(match[1], 10) || 0;
+      state.pageHeight = parseInt(match[2], 10) || 0;
       state.pageTop = state.cursorY;
       continue;
     }
-    if (command.includes("/NewPage")) {
+    if (command === "/NewPage") {
       if (state.pageHeight > 0) {
         state.pageTop += state.pageHeight + 2;
         state.cursorX = 1;
@@ -219,20 +254,18 @@ function parseSpdl(stream) {
     }
 
     // LINE WIDTH
-    const widthMatch = command.match(/^(\d+)\s+w\b/);
-    if (widthMatch) {
-      state.strokeWidth = parseInt(widthMatch[1], 10);
+    if ((match = command.match(LINE_WIDTH_RE))) {
+      state.strokeWidth = parseInt(match[1], 10);
       continue;
     }
 
     // SHAPES
-    if (command.endsWith("re")) {
-      const parts = command.split(/\s+/);
+    if ((match = command.match(RECT_RE))) {
       state.currentPath = {
-        x: parseInt(parts[0], 10),
-        y: parseInt(parts[1], 10),
-        w: parseInt(parts[2], 10),
-        h: parseInt(parts[3], 10),
+        x: parseInt(match[1], 10),
+        y: parseInt(match[2], 10),
+        w: parseInt(match[3], 10),
+        h: parseInt(match[4], 10),
       };
       continue;
     }
@@ -254,11 +287,10 @@ function parseSpdl(stream) {
     }
 
     // PIXEL ART
-    if (command.includes("ID")) {
-      const parts = command.split(/\s+/);
-      const w = parseInt(parts[0], 10);
-      const h = parseInt(parts[1], 10);
-      const payload = parts[3];
+    if ((match = command.match(PIXEL_ART_RE))) {
+      const w = parseInt(match[1], 10);
+      const h = parseInt(match[2], 10);
+      const payload = match[3];
       if (payload && payload.length >= w * h) {
         for (let r = 0; r < h; r += 1) {
           for (let c = 0; c < w; c += 1) {
@@ -274,14 +306,11 @@ function parseSpdl(stream) {
       continue;
     }
 
-    // LINKS & TEXT
-    if (command.includes("/Link")) {
-      const matches = command.match(/\(([^)]+)\)/g);
-      const url = matches?.[0]?.replace(/[()]/g, "");
-      const label = matches?.[1]?.replace(/[()]/g, "");
+    // LINKS
+    if ((match = command.match(LINK_RE))) {
       enqueueCell(state.cursorX, state.cursorY, {
-        Value: label,
-        Link: url,
+        Value: match[2],
+        Link: match[1],
         TextColor: state.fill,
         Bold: state.bold,
         Italic: state.italic,
@@ -291,102 +320,76 @@ function parseSpdl(stream) {
       continue;
     }
 
-    if (command.includes("/Rotate")) {
-      const parts = command.split(/\s+/);
-      state.rotation = parseInt(parts[1] || parts[0], 10) || 0;
+    if ((match = command.match(ROTATE_RE))) {
+      state.rotation = parseInt(match[1], 10) || 0;
       continue;
     }
 
-    if (command.includes("/Align")) {
-      const parts = command.trim().split(/\s+/);
-      state.alignment = parts[1] || "";
+    if ((match = command.match(ALIGN_RE))) {
+      state.alignment = match[1];
       continue;
     }
 
-    const alignCode = command.match(/^(\d+)\s+TA/);
-    if (alignCode) {
-      state.alignment = normalizeAlignment(parseInt(alignCode[1], 10));
+    if ((match = command.match(ALIGN_CODE_RE))) {
+      state.alignment = normalizeAlignment(parseInt(match[1], 10));
       continue;
     }
 
-    if (command.includes("rg")) {
-      const parts = command.split(/\s+/);
-      state.fill = parseColor(parts.slice(0, 3));
+    if ((match = command.match(FILL_COLOR_RE))) {
+      state.fill = parseColor(match.slice(1, 4));
       continue;
     }
-    if (command.includes("SC")) {
-      const parts = command.split(/\s+/);
-      state.stroke = parseColor(parts.slice(0, 3));
-      continue;
-    }
-
-    if (command.includes("Tf")) {
-      state.bold = command.includes("/F2");
-      state.italic = command.includes("/F3");
-      const size = command.match(/(\d+)\s+Tf/);
-      state.fontSize = size ? parseInt(size[1], 10) : state.fontSize;
+    if ((match = command.match(STROKE_COLOR_RE))) {
+      state.stroke = parseColor(match.slice(1, 4));
       continue;
     }
 
-    if (command.includes("Tr")) {
-      state.underline = command.startsWith("1");
+    if ((match = command.match(FONT_RE))) {
+      state.bold = match[1] === "2";
+      state.italic = match[1] === "3";
+      state.fontSize = match[2] ? parseInt(match[2], 10) : state.fontSize;
       continue;
     }
 
-    if (command.includes("Ts")) {
-      const match = command.match(/(\d+)\s+Ts/);
-      state.fontSize = match ? parseInt(match[1], 10) : state.fontSize;
+    if ((match = command.match(UNDERLINE_RE))) {
+      state.underline = match[1] === "1";
       continue;
     }
 
-    if (command.endsWith("Td")) {
-      const parts = command.split(/\s+/);
-      state.cursorX += Math.floor(parseFloat(parts[0]) / 10);
-      state.cursorY += Math.floor(parseFloat(parts[1]) / 10);
+    if ((match = command.match(FONT_SIZE_RE))) {
+      state.fontSize = parseInt(match[1], 10);
       continue;
     }
 
-    if (command.startsWith("/MoveTo")) {
-      const parts = command.split(/\s+/);
-      let targetX = parseInt(parts[1], 10);
-      let targetY = parseInt(parts[2], 10);
-      if (!Number.isNaN(targetX) && !Number.isNaN(targetY)) {
-        if (state.pageWidth > 0) {
-          targetX = Math.max(1, Math.min(state.pageWidth, targetX));
-        } else {
-          targetX = Math.max(1, targetX);
-        }
+    if ((match = command.match(TD_RE))) {
+      state.cursorX += Math.floor(parseFloat(match[1]) / 10);
+      state.cursorY += Math.floor(parseFloat(match[2]) / 10);
+      continue;
+    }
 
-        const rawY = state.pageTop + targetY - 1;
-        if (state.pageHeight > 0) {
-          const pageBottom = state.pageTop + state.pageHeight - 1;
-          targetY = Math.max(state.pageTop, Math.min(pageBottom, rawY));
-        } else {
-          targetY = Math.max(state.pageTop, rawY);
-        }
-
-        state.cursorX = targetX;
-        state.cursorY = targetY;
+    if ((match = command.match(MOVE_TO_RE))) {
+      let targetX = parseInt(match[1], 10);
+      let targetY = parseInt(match[2], 10);
+      if (state.pageWidth > 0) {
+        targetX = Math.max(1, Math.min(state.pageWidth, targetX));
+      } else {
+        targetX = Math.max(1, targetX);
       }
+
+      const rawY = state.pageTop + targetY - 1;
+      if (state.pageHeight > 0) {
+        const pageBottom = state.pageTop + state.pageHeight - 1;
+        targetY = Math.max(state.pageTop, Math.min(pageBottom, rawY));
+      } else {
+        targetY = Math.max(state.pageTop, rawY);
+      }
+
+      state.cursorX = targetX;
+      state.cursorY = targetY;
       continue;
     }
 
-    if (command.startsWith("(")) {
-      const match = command.match(/\((.*)\)\s*Tj/);
-      if (match) {
-        enqueueCell(state.cursorX, state.cursorY, {
-          Value: match[1],
-          TextColor: state.fill,
-          Bold: state.bold,
-          Italic: state.italic,
-          Underline: state.underline,
-          Rotation: state.rotation,
-          Alignment: state.alignment,
-          StrokeWidth: state.strokeWidth,
-        });
-      }
-      continue;
-    }
+    // Unrecognized command: ignore rather than guessing.
   }
 
   return records;
