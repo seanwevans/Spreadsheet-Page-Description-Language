@@ -370,11 +370,6 @@ function parseRectangleCommand(command) {
   };
 }
 
-function parseTextCommand(command) {
-  const textMatch = command.match(TEXT_COMMAND_PATTERN);
-  return textMatch ? textMatch[1] : null;
-}
-
 function drawPage(sheet, topRow, width, height, borderStyle, maxRows, maxCols) {
   const clamped = clampRect(1, topRow, width, height, maxRows || 1000, maxCols || 26);
   if (!clamped) {

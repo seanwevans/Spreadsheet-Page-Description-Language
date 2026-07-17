@@ -35,12 +35,10 @@ function main(workbook: ExcelScript.Workbook) {
     border.setStyle(ExcelScript.BorderLineStyle.none);
   });
 
-  for (let c = 0; c < maxCols; c++) {
-    renderSheet.getRangeByIndexes(0, c, maxRows, 1).setColumnWidth(cellSize);
-  }
-  for (let r = 0; r < maxRows; r++) {
-    renderSheet.getRangeByIndexes(r, 0, 1, maxCols).setRowHeight(cellSize);
-  }
+  // Size the whole canvas with two calls instead of one API call per
+  // row/column (Office Scripts range calls are expensive).
+  canvas.getFormat().setColumnWidth(cellSize);
+  canvas.getFormat().setRowHeight(cellSize);
 
   // Remove existing images
   renderSheet.getShapes().forEach(shape => {
@@ -361,11 +359,6 @@ function parseRectangleCommand(command: string): { x: number; y: number; w: numb
     w: Math.floor(parseFloat(parts[2])),
     h: Math.floor(parseFloat(parts[3]))
   };
-}
-
-function parseTextCommand(command: string): string | null {
-  const textMatch = command.match(TEXT_COMMAND_PATTERN);
-  return textMatch ? textMatch[1] : null;
 }
 
 function applyTextFormatting(cell: ExcelScript.Range, color: string, size: number, bold: boolean, italic: boolean, underline: boolean, rotation: number, hAlign: ExcelScript.HorizontalAlignment, vAlign: ExcelScript.VerticalAlignment) {

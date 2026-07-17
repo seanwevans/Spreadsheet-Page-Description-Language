@@ -526,12 +526,3 @@ Private Function ParseRectangleCommand(ByVal command As String, ByRef x As Long,
     h = CLng(Fix(Val(parts(3))))
     ParseRectangleCommand = True
 End Function
-
-Private Function ParseTextCommand(ByVal command As String, ByRef value As String) As Boolean
-    Dim m As Object
-    Set m = ExecPattern(command, TEXT_COMMAND_PATTERN)
-    If m Is Nothing Then Exit Function
-
-    value = m.SubMatches(0)
-    ParseTextCommand = True
-End Function
