@@ -2,7 +2,7 @@
   "apiToken": "patXXXXXXXXXXXXXX",
   "baseId": "appXXXXXXXXXXXXXX",
   "renderTable": "02_Rendered_View",
-  "streamPath": "example.spdl",
+  "streamPath": "examples/example.spdl",
   "truncateTable": true,
   "batchSize": 10
 }
