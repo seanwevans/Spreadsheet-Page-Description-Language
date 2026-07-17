@@ -29,6 +29,7 @@ function lint(stream) {
     const lineNumber = i + 1;
     const command = lines[i].trim();
     if (!command) continue;
+    if (command.startsWith("%")) continue; // comment line
 
     const report = (list, message) => list.push({ line: lineNumber, command, message });
 

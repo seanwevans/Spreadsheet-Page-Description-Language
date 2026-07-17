@@ -2,10 +2,10 @@
 // exactly; substring checks are never used for dispatch so that text content
 // such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
 const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
-const LINK_COMMAND_PATTERN = /^\(([^)]*)\)\s+\(([^)]*)\)\s+\/Link$/;
-const INSERT_IMAGE_PATTERN = /^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+\/InsertImage$/;
-const NOTE_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Note$/;
-const DROPDOWN_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Dropdown$/;
+const LINK_COMMAND_PATTERN = /^\(((?:[^)\\]|\\.)*)\)\s+\(((?:[^)\\]|\\.)*)\)\s+\/Link$/;
+const INSERT_IMAGE_PATTERN = /^(\d+)\s+(\d+)\s+\(((?:[^)\\]|\\.)*)\)\s+\/InsertImage$/;
+const NOTE_COMMAND_PATTERN = /^\(((?:[^)\\]|\\.)*)\)\s+\/Note$/;
+const DROPDOWN_COMMAND_PATTERN = /^\(((?:[^)\\]|\\.)*)\)\s+\/Dropdown$/;
 const MEDIABOX_PATTERN = /^(\d+)\s+(\d+)\s+MediaBox$/;
 const LINE_WIDTH_PATTERN = /^(\d+)\s+w$/;
 const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
@@ -132,6 +132,7 @@ function renderPDF() {
   for (let i = 0; i < data.length; i++) {
     let command = data[i][0].toString().trim();
     if (!command) continue;
+    if (command.startsWith("%")) continue; // comment line
 
     // One bad command must not abort the whole render: log it and continue
     // with the next command.
@@ -141,7 +142,7 @@ function renderPDF() {
       // --- TEXT --- (parsed first so text content can never be misread as an operator)
       if ((match = command.match(TEXT_COMMAND_PATTERN))) {
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
-          writeText(currentX, currentY, match[1]);
+          writeText(currentX, currentY, unescapeTextOperand(match[1]));
         } else {
           Logger.log(`Skipping text outside canvas at (${currentX}, ${currentY}): ${command}`);
         }
@@ -150,8 +151,8 @@ function renderPDF() {
 
       // --- LINKS ---
       if ((match = command.match(LINK_COMMAND_PATTERN))) {
-        let url = match[1];
-        let label = match[2];
+        let url = unescapeTextOperand(match[1]);
+        let label = unescapeTextOperand(match[2]);
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           writeText(currentX, currentY, `=HYPERLINK("${escapeFormulaString(url)}", "${escapeFormulaString(label)}")`);
           fontLines[currentY - 1][currentX - 1] = "none";
@@ -166,7 +167,7 @@ function renderPDF() {
       if ((match = command.match(INSERT_IMAGE_PATTERN))) {
         let w = parseInt(match[1]);
         let h = parseInt(match[2]);
-        let url = match[3];
+        let url = unescapeTextOperand(match[3]);
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           const imgX = currentX;
           const imgY = currentY;
@@ -181,7 +182,7 @@ function renderPDF() {
       // --- ANNOTATIONS (/Note) ---
       if ((match = command.match(NOTE_COMMAND_PATTERN))) {
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
-          notes[currentY - 1][currentX - 1] = match[1];
+          notes[currentY - 1][currentX - 1] = unescapeTextOperand(match[1]);
         }
         continue;
       }
@@ -200,7 +201,7 @@ function renderPDF() {
         continue;
       }
       if ((match = command.match(DROPDOWN_COMMAND_PATTERN))) {
-        let options = match[1].split(",").map(s => s.trim());
+        let options = match[1].split(",").map(s => unescapeTextOperand(s.trim()));
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           let dropdownWidth = Math.min(6, maxCols - currentX + 1);
           fillRegion(backgrounds, currentX, currentY, dropdownWidth, 1, "#FFF2CC");
@@ -430,6 +431,11 @@ function isInsideCanvas(x, y, maxRows, maxCols) {
 // string literal instead of breaking the formula or injecting a new one.
 function escapeFormulaString(value) {
   return String(value).replace(/"/g, '""');
+}
+
+// Resolves \( \) \\ escape sequences in a matched text operand.
+function unescapeTextOperand(value) {
+  return value.replace(/\\([()\\])/g, "$1");
 }
 
 function clampRect(x, y, w, h, maxRows, maxCols) {
