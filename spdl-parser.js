@@ -22,12 +22,16 @@
   // Anchored command patterns. Every SPDL command must match one of these
   // exactly; substring checks are never used for dispatch so that text content
   // such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
+  // Text operands support PDF-style escapes: \( \) \\ produce literal
+  // characters. Tj keeps a greedy match for backward compatibility with bare
+  // parens in text; multi-operand commands use the escaped-character class so
+  // an escaped paren cannot end the operand early.
   const patterns = {
     text: /^\((.*)\)\s+Tj$/,
-    link: /^\(([^)]*)\)\s+\(([^)]*)\)\s+\/Link$/,
-    insertImage: /^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+\/InsertImage$/,
-    note: /^\(([^)]*)\)\s+\/Note$/,
-    dropdown: /^\(([^)]*)\)\s+\/Dropdown$/,
+    link: /^\(((?:[^)\\]|\\.)*)\)\s+\(((?:[^)\\]|\\.)*)\)\s+\/Link$/,
+    insertImage: /^(\d+)\s+(\d+)\s+\(((?:[^)\\]|\\.)*)\)\s+\/InsertImage$/,
+    note: /^\(((?:[^)\\]|\\.)*)\)\s+\/Note$/,
+    dropdown: /^\(((?:[^)\\]|\\.)*)\)\s+\/Dropdown$/,
     mediaBox: /^(\d+)\s+(\d+)\s+MediaBox$/,
     lineWidth: /^(\d+)\s+w$/,
     rectangle: /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+re$/,
@@ -48,6 +52,11 @@
 
   // Exact-match operators that take no operands.
   const operators = ["/CheckBox", "/NewPage", "f", "S"];
+
+  // Resolves \( \) \\ escape sequences in a matched text operand.
+  function unescapeTextOperand(value) {
+    return value.replace(/\\([()\\])/g, "$1");
+  }
 
   function mapLineWidth(width) {
     // Canonical SPDL stroke width mapping (shared across renderers):
@@ -123,10 +132,15 @@
     for (const command of lines) {
       let match;
 
+      // COMMENTS — % starts a comment line, skipped entirely.
+      if (command.startsWith("%")) {
+        continue;
+      }
+
       // TEXT — parsed first so text content can never be misread as an operator.
       if ((match = command.match(patterns.text))) {
         enqueueCell(state.cursorX, state.cursorY, {
-          Value: match[1],
+          Value: unescapeTextOperand(match[1]),
           TextColor: state.fill,
           Bold: state.bold,
           Italic: state.italic,
@@ -142,7 +156,7 @@
       if ((match = command.match(patterns.insertImage))) {
         const width = parseInt(match[1], 10) || 0;
         const height = parseInt(match[2], 10) || 0;
-        const imageUrl = match[3];
+        const imageUrl = unescapeTextOperand(match[3]);
         enqueueCell(state.cursorX, state.cursorY, {
           Attachment: imageUrl ? [{ url: imageUrl }] : undefined,
           Value: imageUrl,
@@ -163,7 +177,7 @@
 
       // NOTE
       if ((match = command.match(patterns.note))) {
-        enqueueCell(state.cursorX, state.cursorY, { Note: match[1] });
+        enqueueCell(state.cursorX, state.cursorY, { Note: unescapeTextOperand(match[1]) });
         continue;
       }
 
@@ -178,7 +192,7 @@
 
       // DROPDOWN
       if ((match = command.match(patterns.dropdown))) {
-        const options = match[1].split(",").map((s) => s.trim());
+        const options = match[1].split(",").map((s) => unescapeTextOperand(s.trim()));
         enqueueCell(state.cursorX, state.cursorY, {
           Dropdown: options[0] || "",
           Note: options.length ? `Options: ${options.join(", ")}` : undefined,
@@ -268,8 +282,8 @@
       // LINKS
       if ((match = command.match(patterns.link))) {
         enqueueCell(state.cursorX, state.cursorY, {
-          Value: match[2],
-          Link: match[1],
+          Value: unescapeTextOperand(match[2]),
+          Link: unescapeTextOperand(match[1]),
           TextColor: state.fill,
           Bold: state.bold,
           Italic: state.italic,
@@ -369,5 +383,6 @@
     mapLineWidth,
     parseColor,
     normalizeAlignment,
+    unescapeTextOperand,
   };
 });

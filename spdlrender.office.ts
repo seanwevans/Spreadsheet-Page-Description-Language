@@ -73,6 +73,7 @@ function main(workbook: ExcelScript.Workbook) {
   for (const rawCommand of commands) {
     const command = rawCommand.trim();
     if (!command) continue;
+    if (command.startsWith("%")) continue; // comment line
     let match: RegExpMatchArray | null;
 
     // One bad command (e.g. a range outside the sheet) must not abort the
@@ -82,7 +83,7 @@ function main(workbook: ExcelScript.Workbook) {
       if ((match = command.match(TEXT_COMMAND_PATTERN))) {
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           const cell = getCell(renderSheet, currentX, currentY);
-          cell.setValue(match[1]);
+          cell.setValue(unescapeTextOperand(match[1]));
           applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
         } else {
           console.log(`Skipping text outside canvas at (${currentX}, ${currentY}): ${command}`);
@@ -92,8 +93,8 @@ function main(workbook: ExcelScript.Workbook) {
 
       // --- LINKS ---
       if ((match = command.match(LINK_COMMAND_PATTERN))) {
-        const url = match[1];
-        const label = match[2];
+        const url = unescapeTextOperand(match[1]);
+        const label = unescapeTextOperand(match[2]);
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           const cell = getCell(renderSheet, currentX, currentY);
           cell.setFormula(`=HYPERLINK("${escapeFormulaString(url)}", "${escapeFormulaString(label)}")`);
@@ -108,7 +109,7 @@ function main(workbook: ExcelScript.Workbook) {
       if ((match = command.match(INSERT_IMAGE_PATTERN))) {
         // Office Scripts cannot directly fetch external images without base64 data.
         // Leave a placeholder to avoid runtime errors.
-        console.log(`Skipping image insertion for ${match[3]}; provide base64 to add images manually.`);
+        console.log(`Skipping image insertion for ${unescapeTextOperand(match[3])}; provide base64 to add images manually.`);
         continue;
       }
 
@@ -116,7 +117,7 @@ function main(workbook: ExcelScript.Workbook) {
       if ((match = command.match(NOTE_COMMAND_PATTERN))) {
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
           const cell = getCell(renderSheet, currentX, currentY);
-          cell.addComment(match[1], "SPDL");
+          cell.addComment(unescapeTextOperand(match[1]), "SPDL");
         }
         continue;
       }
@@ -133,7 +134,7 @@ function main(workbook: ExcelScript.Workbook) {
 
       if ((match = command.match(DROPDOWN_COMMAND_PATTERN))) {
         if (!isInsideCanvas(currentX, currentY, maxRows, maxCols)) continue;
-        const options = match[1].split(",").map(s => s.trim());
+        const options = match[1].split(",").map(s => unescapeTextOperand(s.trim()));
         const dropdownWidth = Math.min(6, maxCols - currentX + 1);
         const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, dropdownWidth);
         range.merge();
@@ -328,10 +329,10 @@ function main(workbook: ExcelScript.Workbook) {
 // exactly; substring checks are never used for dispatch so that text content
 // such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
 const TEXT_COMMAND_PATTERN = /^\((.*)\)\s+Tj\s*$/;
-const LINK_COMMAND_PATTERN = /^\(([^)]*)\)\s+\(([^)]*)\)\s+\/Link$/;
-const INSERT_IMAGE_PATTERN = /^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+\/InsertImage$/;
-const NOTE_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Note$/;
-const DROPDOWN_COMMAND_PATTERN = /^\(([^)]*)\)\s+\/Dropdown$/;
+const LINK_COMMAND_PATTERN = /^\(((?:[^)\\]|\\.)*)\)\s+\(((?:[^)\\]|\\.)*)\)\s+\/Link$/;
+const INSERT_IMAGE_PATTERN = /^(\d+)\s+(\d+)\s+\(((?:[^)\\]|\\.)*)\)\s+\/InsertImage$/;
+const NOTE_COMMAND_PATTERN = /^\(((?:[^)\\]|\\.)*)\)\s+\/Note$/;
+const DROPDOWN_COMMAND_PATTERN = /^\(((?:[^)\\]|\\.)*)\)\s+\/Dropdown$/;
 const MEDIABOX_PATTERN = /^(\d+)\s+(\d+)\s+MediaBox$/;
 const LINE_WIDTH_PATTERN = /^(\d+)\s+w$/;
 const RECTANGLE_COMMAND_PATTERN = /^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$/;
@@ -408,6 +409,11 @@ function isInsideCanvas(x: number, y: number, maxRows: number, maxCols: number):
 // string literal instead of breaking the formula or injecting a new one.
 function escapeFormulaString(value: string): string {
   return value.replace(/"/g, '""');
+}
+
+// Resolves \( \) \\ escape sequences in a matched text operand.
+function unescapeTextOperand(value: string): string {
+  return value.replace(/\\([()\\])/g, "$1");
 }
 
 function clampRect(x: number, y: number, w: number, h: number, maxRows: number, maxCols: number): { x: number; y: number; w: number; h: number } | null {

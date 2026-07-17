@@ -14,12 +14,29 @@ and is covered by the test suite in `tests/`.
   spreadsheet row, starting at row 2 of `01_Hex_Stream`).
 - Leading/trailing whitespace is trimmed. **Blank lines are skipped**, not
   treated as end of stream.
+- A line whose first non-whitespace character is `%` is a **comment** and is
+  skipped entirely.
 - Commands are **case-sensitive** and must match one of the grammar rules
   below **exactly** (anchored match). A line that matches no rule is an
   unrecognized command: renderers must skip it — never partially interpret
   it — and should log it.
 - Text content inside `(…)` is opaque: it must never be scanned for operator
   substrings. `(Morgan) Tj` writes the text "Morgan"; it does not set a color.
+
+## Text operands and escapes
+
+Text operands support PDF-style escape sequences: `\(`, `\)`, and `\\`
+produce a literal `(`, `)`, and `\` respectively. In multi-operand commands
+(`/Link`, `/Note`, `/Dropdown`, `/InsertImage`) an escaped `)` does not end
+the operand, so parentheses in labels and URLs must be escaped:
+`(see \(footnote\)) /Note`. For backward compatibility, the single-operand
+`(…) Tj` also accepts bare parentheses — its operand extends to the last `)`
+before `Tj` — but escaping is recommended there too. Dropdown option lists
+are split on `,` before unescaping; commas cannot appear inside an option.
+
+The AppleScript renderer does not implement escape resolution (its text
+handling is minimal); escaped text renders there with the backslashes
+visible.
 
 ## Graphics state
 

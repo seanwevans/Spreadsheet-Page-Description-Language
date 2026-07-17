@@ -100,6 +100,8 @@ on normalizeText(rawValue)
 end normalizeText
 
 on processCommand(cmd, state, renderTable, logTable)
+    -- % starts a comment line, skipped entirely.
+    if cmd starts with "%" then return state
     set tokens to my splitText(cmd, " ")
     -- Text is checked first so text content can never be misread as an
     -- operator, and MediaBox is matched as a trailing token rather than a

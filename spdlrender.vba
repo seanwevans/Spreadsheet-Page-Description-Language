@@ -6,10 +6,10 @@ Option Explicit
 ' exactly; substring checks are never used for dispatch so that text content
 ' such as "(Morgan) Tj" can never be mistaken for an operator like "rg".
 Private Const TEXT_COMMAND_PATTERN As String = "^\((.*)\)\s+Tj\s*$"
-Private Const LINK_COMMAND_PATTERN As String = "^\(([^)]*)\)\s+\(([^)]*)\)\s+/Link$"
-Private Const INSERT_IMAGE_PATTERN As String = "^(\d+)\s+(\d+)\s+\(([^)]*)\)\s+/InsertImage$"
-Private Const NOTE_COMMAND_PATTERN As String = "^\(([^)]*)\)\s+/Note$"
-Private Const DROPDOWN_COMMAND_PATTERN As String = "^\(([^)]*)\)\s+/Dropdown$"
+Private Const LINK_COMMAND_PATTERN As String = "^\(((?:[^)\\]|\\.)*)\)\s+\(((?:[^)\\]|\\.)*)\)\s+/Link$"
+Private Const INSERT_IMAGE_PATTERN As String = "^(\d+)\s+(\d+)\s+\(((?:[^)\\]|\\.)*)\)\s+/InsertImage$"
+Private Const NOTE_COMMAND_PATTERN As String = "^\(((?:[^)\\]|\\.)*)\)\s+/Note$"
+Private Const DROPDOWN_COMMAND_PATTERN As String = "^\(((?:[^)\\]|\\.)*)\)\s+/Dropdown$"
 Private Const MEDIABOX_PATTERN As String = "^(\d+)\s+(\d+)\s+MediaBox$"
 Private Const LINE_WIDTH_PATTERN As String = "^(\d+)\s+w$"
 Private Const RECTANGLE_COMMAND_PATTERN As String = "^\s*-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\s+re\s*$"
@@ -91,6 +91,7 @@ Public Sub RenderSPDL()
         Dim command As String
         command = Trim$(CStr(sourceSheet.Cells(i + 1, 1).Value))
         If Len(command) = 0 Then GoTo NextCommand
+        If Left$(command, 1) = "%" Then GoTo NextCommand ' comment line
 
         ' One bad command (e.g. a range outside the sheet) must not abort the
         ' whole render: log it and continue with the next command.
@@ -101,7 +102,7 @@ Public Sub RenderSPDL()
         If Not m Is Nothing Then
             If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             With renderSheet.Cells(currentY, currentX)
-                .Value = m.SubMatches(0)
+                .Value = UnescapeTextOperand(m.SubMatches(0))
                 ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
                 .Orientation = currentRotation
                 .HorizontalAlignment = hAlign
@@ -116,7 +117,7 @@ Public Sub RenderSPDL()
             If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             With renderSheet.Cells(currentY, currentX)
                 .Hyperlinks.Delete
-                renderSheet.Hyperlinks.Add Anchor:=renderSheet.Cells(currentY, currentX), Address:=m.SubMatches(0), TextToDisplay:=m.SubMatches(1)
+                renderSheet.Hyperlinks.Add Anchor:=renderSheet.Cells(currentY, currentX), Address:=UnescapeTextOperand(m.SubMatches(0)), TextToDisplay:=UnescapeTextOperand(m.SubMatches(1))
                 ApplyText .Font, currentFillColor, currentFontSize, isBold, isItalic, underline
                 .HorizontalAlignment = hAlign
                 .VerticalAlignment = vAlign
@@ -131,7 +132,7 @@ Public Sub RenderSPDL()
             w = Val(m.SubMatches(0)): h = Val(m.SubMatches(1))
             If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             On Error Resume Next
-            renderSheet.Shapes.AddPicture m.SubMatches(2), msoFalse, msoTrue, _
+            renderSheet.Shapes.AddPicture UnescapeTextOperand(m.SubMatches(2)), msoFalse, msoTrue, _
                 renderSheet.Cells(currentY, currentX).Left, _
                 renderSheet.Cells(currentY, currentX).Top, _
                 w, h
@@ -143,7 +144,7 @@ Public Sub RenderSPDL()
         Set m = ExecPattern(command, NOTE_COMMAND_PATTERN)
         If Not m Is Nothing Then
             If IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then
-                renderSheet.Cells(currentY, currentX).NoteText m.SubMatches(0)
+                renderSheet.Cells(currentY, currentX).NoteText UnescapeTextOperand(m.SubMatches(0))
             End If
             GoTo NextCommand
         End If
@@ -163,7 +164,7 @@ Public Sub RenderSPDL()
         If Not m Is Nothing Then
             If Not IsInsideCanvas(currentX, currentY, maxRows, maxCols) Then GoTo NextCommand
             Dim options As String
-            options = m.SubMatches(0)
+            options = UnescapeTextOperand(m.SubMatches(0))
             Dim dropdownWidth As Long
             dropdownWidth = Application.Min(6, maxCols - currentX + 1)
             With renderSheet.Cells(currentY, currentX).Resize(1, dropdownWidth)
@@ -381,6 +382,17 @@ Private Function ExecPattern(ByVal command As String, ByVal pattern As String) A
     Else
         Set ExecPattern = Nothing
     End If
+End Function
+
+' Resolves \( \) \\ escape sequences in a matched text operand.
+Private Function UnescapeTextOperand(ByVal value As String) As String
+    Static re As Object
+    If re Is Nothing Then
+        Set re = CreateObject("VBScript.RegExp")
+        re.Global = True
+        re.Pattern = "\\([()\\])"
+    End If
+    UnescapeTextOperand = re.Replace(value, "$1")
 End Function
 
 Private Function HasRotateToken(ByVal command As String) As Boolean
