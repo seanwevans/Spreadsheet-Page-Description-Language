@@ -1,0 +1,9 @@
+# Dependencies
+node_modules/
+
+# Local configuration with real credentials — copy
+# spdlrender.airtable.config.json to *.local.json and edit that instead.
+*.local.json
+
+# OS noise
+.DS_Store
