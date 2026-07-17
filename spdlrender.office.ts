@@ -73,226 +73,251 @@ function main(workbook: ExcelScript.Workbook) {
     if (!command) continue;
     let match: RegExpMatchArray | null;
 
-    // --- TEXT --- (parsed first so text content can never be misread as an operator)
-    if ((match = command.match(TEXT_COMMAND_PATTERN))) {
-      const cell = getCell(renderSheet, currentX, currentY);
-      cell.setValue(match[1]);
-      applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
-      continue;
-    }
-
-    // --- LINKS ---
-    if ((match = command.match(LINK_COMMAND_PATTERN))) {
-      const url = match[1];
-      const label = match[2];
-      const cell = getCell(renderSheet, currentX, currentY);
-      cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
-      applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
-      continue;
-    }
-
-    // --- IMAGE (InsertImage) ---
-    if ((match = command.match(INSERT_IMAGE_PATTERN))) {
-      // Office Scripts cannot directly fetch external images without base64 data.
-      // Leave a placeholder to avoid runtime errors.
-      console.log(`Skipping image insertion for ${match[3]}; provide base64 to add images manually.`);
-      continue;
-    }
-
-    // --- ANNOTATIONS (/Note) ---
-    if ((match = command.match(NOTE_COMMAND_PATTERN))) {
-      const cell = getCell(renderSheet, currentX, currentY);
-      cell.addComment(match[1], "SPDL");
-      continue;
-    }
-
-    // --- ACROFORMS ---
-    if (isExactOperator(command, "/CheckBox")) {
-      const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 1);
-      range.setValue("☐");
-      range.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
-      range.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
-      continue;
-    }
-
-    if ((match = command.match(DROPDOWN_COMMAND_PATTERN))) {
-      const options = match[1].split(",").map(s => s.trim());
-      const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 6);
-      range.merge();
-      range.getDataValidation().setList(options);
-      range.setValue(options[0]);
-      const format = range.getFormat();
-      format.getFill().setColor("#FFF2CC");
-      format.setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
-      format.setVerticalAlignment(ExcelScript.VerticalAlignment.center);
-      setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
-      continue;
-    }
-
-    // --- PAGE SETUP ---
-    if ((match = command.match(MEDIABOX_PATTERN))) {
-      const parsedWidth = parseInt(match[1], 10);
-      const parsedHeight = parseInt(match[2], 10);
-      if (parsedWidth > 0 && parsedHeight > 0) {
-        pageWidth = parsedWidth;
-        pageHeight = parsedHeight;
-        mediaBoxApplied = true;
-        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth, currentLineWeight);
-      } else {
-        mediaBoxApplied = false;
-        console.log(`Ignoring MediaBox with invalid dimensions: ${command}`);
-      }
-      continue;
-    }
-
-    if (isExactOperator(command, "/NewPage")) {
-      if (!mediaBoxApplied || pageWidth <= 0 || pageHeight <= 0) {
-        console.log("/NewPage encountered before MediaBox was applied; skipping page break.");
-      } else {
-        pageTopRow = pageTopRow + pageHeight + 2;
-        currentX = 1;
-        currentY = pageTopRow;
-        drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth, currentLineWeight);
-      }
-      continue;
-    }
-
-    // --- LINE WIDTH ---
-    if ((match = command.match(LINE_WIDTH_PATTERN))) {
-      const widthValue = parseInt(match[1], 10);
-      currentLineWidth = mapLineWidth(widthValue);
-      currentLineWeight = mapLineWeight(widthValue);
-      continue;
-    }
-
-    // --- SHAPES ---
-    const rectanglePath = parseRectangleCommand(command);
-    if (rectanglePath) {
-      currentPath.x = rectanglePath.x;
-      currentPath.y = pageTopRow + rectanglePath.y;
-      currentPath.w = rectanglePath.w;
-      currentPath.h = rectanglePath.h;
-      continue;
-    }
-
-    if (isExactOperator(command, "f") || isExactOperator(command, "S")) {
-      if (currentPath.w > 0 && currentPath.h > 0) {
-        const range = renderSheet.getRangeByIndexes(currentPath.y - 1, currentPath.x - 1, currentPath.h, currentPath.w);
-        if (isExactOperator(command, "f")) {
-          range.getFormat().getFill().setColor(currentFillColor);
+    // One bad command (e.g. a range outside the sheet) must not abort the
+    // whole render: log it and continue with the next command.
+    try {
+      // --- TEXT --- (parsed first so text content can never be misread as an operator)
+      if ((match = command.match(TEXT_COMMAND_PATTERN))) {
+        if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
+          const cell = getCell(renderSheet, currentX, currentY);
+          cell.setValue(match[1]);
+          applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
+        } else {
+          console.log(`Skipping text outside canvas at (${currentX}, ${currentY}): ${command}`);
         }
-        if (command === "S") {
-          setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
-        }
+        continue;
       }
-      continue;
-    }
 
-    // --- PIXEL IMAGES ---
-    if ((match = command.match(PIXEL_ART_PATTERN))) {
-      const width = parseInt(match[1], 10);
-      const height = parseInt(match[2], 10);
-      const pixelData = match[3];
-      if (pixelData && pixelData.length >= width * height) {
-        for (let r = 0; r < height; r++) {
-          for (let c = 0; c < width; c++) {
-            const colorCode = pixelData[(r * width) + c];
-            const pixelColor = colorCode === '1' ? "#000000" : colorCode === '2' ? "#F1C40F" : colorCode === '3' ? "#E74C3C" : null;
-            if (pixelColor) {
-              const cell = renderSheet.getRangeByIndexes(currentY + r - 1, currentX + c - 1, 1, 1);
-              cell.getFormat().getFill().setColor(pixelColor);
+      // --- LINKS ---
+      if ((match = command.match(LINK_COMMAND_PATTERN))) {
+        const url = match[1];
+        const label = match[2];
+        if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
+          const cell = getCell(renderSheet, currentX, currentY);
+          cell.setFormula(`=HYPERLINK("${url}", "${label}")`);
+          applyTextFormatting(cell, currentFillColor, currentFontSize, isBold, isItalic, underline, currentRotation, currentHorizontalAlignment, currentVerticalAlignment);
+        } else {
+          console.log(`Skipping link outside canvas at (${currentX}, ${currentY}): ${command}`);
+        }
+        continue;
+      }
+
+      // --- IMAGE (InsertImage) ---
+      if ((match = command.match(INSERT_IMAGE_PATTERN))) {
+        // Office Scripts cannot directly fetch external images without base64 data.
+        // Leave a placeholder to avoid runtime errors.
+        console.log(`Skipping image insertion for ${match[3]}; provide base64 to add images manually.`);
+        continue;
+      }
+
+      // --- ANNOTATIONS (/Note) ---
+      if ((match = command.match(NOTE_COMMAND_PATTERN))) {
+        if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
+          const cell = getCell(renderSheet, currentX, currentY);
+          cell.addComment(match[1], "SPDL");
+        }
+        continue;
+      }
+
+      // --- ACROFORMS ---
+      if (isExactOperator(command, "/CheckBox")) {
+        if (!isInsideCanvas(currentX, currentY, maxRows, maxCols)) continue;
+        const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, 1);
+        range.setValue("☐");
+        range.getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+        range.getFormat().setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+        continue;
+      }
+
+      if ((match = command.match(DROPDOWN_COMMAND_PATTERN))) {
+        if (!isInsideCanvas(currentX, currentY, maxRows, maxCols)) continue;
+        const options = match[1].split(",").map(s => s.trim());
+        const dropdownWidth = Math.min(6, maxCols - currentX + 1);
+        const range = renderSheet.getRangeByIndexes(currentY - 1, currentX - 1, 1, dropdownWidth);
+        range.merge();
+        range.getDataValidation().setList(options);
+        range.setValue(options[0]);
+        const format = range.getFormat();
+        format.getFill().setColor("#FFF2CC");
+        format.setHorizontalAlignment(ExcelScript.HorizontalAlignment.center);
+        format.setVerticalAlignment(ExcelScript.VerticalAlignment.center);
+        setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
+        continue;
+      }
+
+      // --- PAGE SETUP ---
+      if ((match = command.match(MEDIABOX_PATTERN))) {
+        const parsedWidth = parseInt(match[1], 10);
+        const parsedHeight = parseInt(match[2], 10);
+        if (parsedWidth > 0 && parsedHeight > 0) {
+          pageWidth = parsedWidth;
+          pageHeight = parsedHeight;
+          mediaBoxApplied = true;
+          drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth, currentLineWeight, maxRows, maxCols);
+        } else {
+          mediaBoxApplied = false;
+          console.log(`Ignoring MediaBox with invalid dimensions: ${command}`);
+        }
+        continue;
+      }
+
+      if (isExactOperator(command, "/NewPage")) {
+        if (!mediaBoxApplied || pageWidth <= 0 || pageHeight <= 0) {
+          console.log("/NewPage encountered before MediaBox was applied; skipping page break.");
+        } else {
+          pageTopRow = pageTopRow + pageHeight + 2;
+          currentX = 1;
+          currentY = pageTopRow;
+          drawPageIfValid(renderSheet, pageTopRow, pageWidth, pageHeight, currentLineWidth, currentLineWeight, maxRows, maxCols);
+        }
+        continue;
+      }
+
+      // --- LINE WIDTH ---
+      if ((match = command.match(LINE_WIDTH_PATTERN))) {
+        const widthValue = parseInt(match[1], 10);
+        currentLineWidth = mapLineWidth(widthValue);
+        currentLineWeight = mapLineWeight(widthValue);
+        continue;
+      }
+
+      // --- SHAPES ---
+      const rectanglePath = parseRectangleCommand(command);
+      if (rectanglePath) {
+        currentPath.x = rectanglePath.x;
+        currentPath.y = pageTopRow + rectanglePath.y;
+        currentPath.w = rectanglePath.w;
+        currentPath.h = rectanglePath.h;
+        continue;
+      }
+
+      if (isExactOperator(command, "f") || isExactOperator(command, "S")) {
+        if (currentPath.w > 0 && currentPath.h > 0) {
+          const clamped = clampRect(currentPath.x, currentPath.y, currentPath.w, currentPath.h, maxRows, maxCols);
+          if (clamped) {
+            const range = renderSheet.getRangeByIndexes(clamped.y - 1, clamped.x - 1, clamped.h, clamped.w);
+            if (isExactOperator(command, "f")) {
+              range.getFormat().getFill().setColor(currentFillColor);
+            }
+            if (command === "S") {
+              setBorder(range, currentStrokeColor, currentLineWidth, currentLineWeight);
+            }
+          } else {
+            console.log(`Skipping path entirely outside canvas: ${JSON.stringify(currentPath)}`);
+          }
+        }
+        continue;
+      }
+
+      // --- PIXEL IMAGES ---
+      if ((match = command.match(PIXEL_ART_PATTERN))) {
+        const width = parseInt(match[1], 10);
+        const height = parseInt(match[2], 10);
+        const pixelData = match[3];
+        if (pixelData && pixelData.length >= width * height) {
+          for (let r = 0; r < height; r++) {
+            for (let c = 0; c < width; c++) {
+              const colorCode = pixelData[(r * width) + c];
+              const pixelColor = colorCode === '1' ? "#000000" : colorCode === '2' ? "#F1C40F" : colorCode === '3' ? "#E74C3C" : null;
+              if (pixelColor && isInsideCanvas(currentX + c, currentY + r, maxRows, maxCols)) {
+                const cell = renderSheet.getRangeByIndexes(currentY + r - 1, currentX + c - 1, 1, 1);
+                cell.getFormat().getFill().setColor(pixelColor);
+              }
             }
           }
         }
+        continue;
       }
-      continue;
-    }
 
-    // --- ROTATION / ALIGNMENT ---
-    if (command.split(/\s+/).indexOf("/Rotate") >= 0) {
-      const rotationCandidate = parseRotationOperand(command);
-      if (rotationCandidate !== null) {
-        currentRotation = rotationCandidate;
+      // --- ROTATION / ALIGNMENT ---
+      if (command.split(/\s+/).indexOf("/Rotate") >= 0) {
+        const rotationCandidate = parseRotationOperand(command);
+        if (rotationCandidate !== null) {
+          currentRotation = rotationCandidate;
+        }
+        continue;
       }
-      continue;
-    }
 
-    if ((match = command.match(ALIGN_COMMAND_PATTERN))) {
-      const alignDirective = match[1];
-      if (alignDirective === "HCenter") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
-      if (alignDirective === "HRight") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
-      if (alignDirective === "HLeft") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
-      if (alignDirective === "VMiddle") currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
-      if (alignDirective === "VBottom") currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
-      if (alignDirective === "VTop") currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
-      continue;
-    }
-
-    // --- COLORS ---
-    if ((match = command.match(FILL_COLOR_PATTERN))) {
-      currentFillColor = rgbToHex(parseFloat(match[1]) * 255, parseFloat(match[2]) * 255, parseFloat(match[3]) * 255);
-      continue;
-    }
-
-    if ((match = command.match(STROKE_COLOR_PATTERN))) {
-      currentStrokeColor = rgbToHex(parseFloat(match[1]) * 255, parseFloat(match[2]) * 255, parseFloat(match[3]) * 255);
-      continue;
-    }
-
-    // --- TYPOGRAPHY ---
-    if ((match = command.match(FONT_COMMAND_PATTERN))) {
-      isBold = match[1] === "2";
-      isItalic = match[1] === "3";
-      continue;
-    }
-
-    if ((match = command.match(UNDERLINE_PATTERN))) {
-      underline = match[1] === "1";
-      continue;
-    }
-
-    if ((match = command.match(FONT_SIZE_PATTERN))) {
-      currentFontSize = parseInt(match[1], 10) || defaultFontSize;
-      continue;
-    }
-
-    if ((match = command.match(ALIGN_CODE_PATTERN))) {
-      const alignmentCode = parseInt(match[1], 10);
-      if (alignmentCode === 0) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
-      if (alignmentCode === 1) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
-      if (alignmentCode === 2) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
-      if (alignmentCode === 3) currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
-      if (alignmentCode === 4) currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
-      if (alignmentCode === 5) currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
-      if (alignmentCode >= 6) {
-        currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
-        currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
+      if ((match = command.match(ALIGN_COMMAND_PATTERN))) {
+        const alignDirective = match[1];
+        if (alignDirective === "HCenter") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
+        if (alignDirective === "HRight") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
+        if (alignDirective === "HLeft") currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
+        if (alignDirective === "VMiddle") currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
+        if (alignDirective === "VBottom") currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
+        if (alignDirective === "VTop") currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
+        continue;
       }
-      continue;
-    }
 
-    // --- CURSOR ---
-    if ((match = command.match(TD_PATTERN))) {
-      const deltaX = parseFloat(match[1]);
-      const deltaY = parseFloat(match[2]);
-      if (!isNaN(deltaX) && !isNaN(deltaY)) {
-        currentX += Math.trunc(deltaX / 10);
-        currentY += Math.trunc(deltaY / 10);
+      // --- COLORS ---
+      if ((match = command.match(FILL_COLOR_PATTERN))) {
+        currentFillColor = rgbToHex(parseFloat(match[1]) * 255, parseFloat(match[2]) * 255, parseFloat(match[3]) * 255);
+        continue;
       }
-      continue;
-    }
 
-    if ((match = command.match(MOVE_TO_PATTERN))) {
-      const targetX = parseInt(match[1], 10);
-      const targetY = parseInt(match[2], 10);
-      const maxX = pageWidth > 0 ? pageWidth : maxCols;
-      const pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
-      currentX = Math.max(1, Math.min(maxX, targetX));
-      currentY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
-      continue;
-    }
+      if ((match = command.match(STROKE_COLOR_PATTERN))) {
+        currentStrokeColor = rgbToHex(parseFloat(match[1]) * 255, parseFloat(match[2]) * 255, parseFloat(match[3]) * 255);
+        continue;
+      }
 
-    console.log(`Skipped unrecognized command: ${command}`);
+      // --- TYPOGRAPHY ---
+      if ((match = command.match(FONT_COMMAND_PATTERN))) {
+        isBold = match[1] === "2";
+        isItalic = match[1] === "3";
+        continue;
+      }
+
+      if ((match = command.match(UNDERLINE_PATTERN))) {
+        underline = match[1] === "1";
+        continue;
+      }
+
+      if ((match = command.match(FONT_SIZE_PATTERN))) {
+        currentFontSize = parseInt(match[1], 10) || defaultFontSize;
+        continue;
+      }
+
+      if ((match = command.match(ALIGN_CODE_PATTERN))) {
+        const alignmentCode = parseInt(match[1], 10);
+        if (alignmentCode === 0) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
+        if (alignmentCode === 1) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.center;
+        if (alignmentCode === 2) currentHorizontalAlignment = ExcelScript.HorizontalAlignment.right;
+        if (alignmentCode === 3) currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
+        if (alignmentCode === 4) currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
+        if (alignmentCode === 5) currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
+        if (alignmentCode >= 6) {
+          currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
+          currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
+        }
+        continue;
+      }
+
+      // --- CURSOR ---
+      if ((match = command.match(TD_PATTERN))) {
+        const deltaX = parseFloat(match[1]);
+        const deltaY = parseFloat(match[2]);
+        if (!isNaN(deltaX) && !isNaN(deltaY)) {
+          currentX += Math.trunc(deltaX / 10);
+          currentY += Math.trunc(deltaY / 10);
+        }
+        continue;
+      }
+
+      if ((match = command.match(MOVE_TO_PATTERN))) {
+        const targetX = parseInt(match[1], 10);
+        const targetY = parseInt(match[2], 10);
+        const maxX = pageWidth > 0 ? pageWidth : maxCols;
+        const pageBottom = pageHeight > 0 ? pageTopRow + pageHeight - 1 : maxRows;
+        currentX = Math.max(1, Math.min(maxX, targetX));
+        currentY = Math.max(pageTopRow, Math.min(pageBottom, pageTopRow + targetY - 1));
+        continue;
+      }
+
+
+      console.log(`Skipped unrecognized command: ${command}`);
+    } catch (err) {
+      console.log(`Error processing command "${command}": ${err}`);
+    }
   }
 }
 
@@ -361,13 +386,33 @@ function drawPageIfValid(
   width: number,
   height: number,
   borderStyle: ExcelScript.BorderLineStyle,
-  borderWeight: ExcelScript.BorderWeight
+  borderWeight: ExcelScript.BorderWeight,
+  maxRows: number,
+  maxCols: number
 ) {
   if (width > 0 && height > 0) {
-    const pageRange = sheet.getRangeByIndexes(topRow - 1, 0, height, width);
+    const clamped = clampRect(1, topRow, width, height, maxRows, maxCols);
+    if (!clamped) {
+      console.log(`Skipping page draw entirely outside canvas: topRow=${topRow}, width=${width}, height=${height}`);
+      return;
+    }
+    const pageRange = sheet.getRangeByIndexes(clamped.y - 1, clamped.x - 1, clamped.h, clamped.w);
     pageRange.getFormat().getFill().setColor("white");
     setBorder(pageRange, "black", borderStyle, borderWeight);
   }
+}
+
+function isInsideCanvas(x: number, y: number, maxRows: number, maxCols: number): boolean {
+  return x >= 1 && x <= maxCols && y >= 1 && y <= maxRows;
+}
+
+function clampRect(x: number, y: number, w: number, h: number, maxRows: number, maxCols: number): { x: number; y: number; w: number; h: number } | null {
+  const x1 = Math.max(1, x);
+  const y1 = Math.max(1, y);
+  const x2 = Math.min(maxCols, x + w - 1);
+  const y2 = Math.min(maxRows, y + h - 1);
+  if (x2 < x1 || y2 < y1) return null;
+  return { x: x1, y: y1, w: x2 - x1 + 1, h: y2 - y1 + 1 };
 }
 
 function setBorder(
