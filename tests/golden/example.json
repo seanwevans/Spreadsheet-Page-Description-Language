@@ -1,0 +1,425 @@
+[
+  {
+    "fields": {
+      "Row": 2,
+      "Col": 3,
+      "Value": "SPDL Demo",
+      "TextColor": "#000000",
+      "Bold": true,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 3
+    }
+  },
+  {
+    "fields": {
+      "Row": 4,
+      "Col": 3,
+      "Value": "Text, shapes, links, and forms",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 3
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 2,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 3,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 4,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 5,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 6,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 7,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 2,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 3,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 4,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 5,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 6,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 7,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 2,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 3,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 4,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 5,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 6,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 7,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 2,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 3,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 4,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 5,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 6,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 7,
+      "Col": 7,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 2,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 8,
+      "Col": 7,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 2,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 3,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 4,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 5,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 6,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 7,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "medium"
+    }
+  },
+  {
+    "fields": {
+      "Row": 10,
+      "Col": 3,
+      "Value": "Click Me",
+      "Link": "https://example.com",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Alignment": "HCenter"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 3,
+      "Value": "Pick one:",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 2
+    }
+  },
+  {
+    "fields": {
+      "Row": 13,
+      "Col": 3,
+      "Dropdown": "Alpha",
+      "Note": "Options: Alpha, Beta, Gamma",
+      "Background": "#FFF2CC",
+      "Alignment": "HCenter"
+    }
+  },
+  {
+    "fields": {
+      "Row": 15,
+      "Col": 3,
+      "Checkbox": true,
+      "Alignment": "VMiddle"
+    }
+  },
+  {
+    "fields": {
+      "Row": 15,
+      "Col": 4,
+      "Value": "Done?",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 2
+    }
+  },
+  {
+    "fields": {
+      "Row": 17,
+      "Col": 3,
+      "Value": "This cell has a note",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 2
+    }
+  },
+  {
+    "fields": {
+      "Row": 17,
+      "Col": 3,
+      "Note": "Rendered by an SPDL renderer"
+    }
+  },
+  {
+    "fields": {
+      "Row": 24,
+      "Col": 3,
+      "Value": "Page two",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 2
+    }
+  },
+  {
+    "fields": {
+      "Row": 24,
+      "Col": 3,
+      "Background": "#000000"
+    }
+  },
+  {
+    "fields": {
+      "Row": 24,
+      "Col": 4,
+      "Background": "#F1C40F"
+    }
+  },
+  {
+    "fields": {
+      "Row": 24,
+      "Col": 5,
+      "Background": "#000000"
+    }
+  },
+  {
+    "fields": {
+      "Row": 25,
+      "Col": 3,
+      "Background": "#F1C40F"
+    }
+  },
+  {
+    "fields": {
+      "Row": 25,
+      "Col": 4,
+      "Background": "#000000"
+    }
+  },
+  {
+    "fields": {
+      "Row": 25,
+      "Col": 5,
+      "Background": "#F1C40F"
+    }
+  },
+  {
+    "fields": {
+      "Row": 26,
+      "Col": 3,
+      "Background": "#000000"
+    }
+  },
+  {
+    "fields": {
+      "Row": 26,
+      "Col": 4,
+      "Background": "#F1C40F"
+    }
+  },
+  {
+    "fields": {
+      "Row": 26,
+      "Col": 5,
+      "Background": "#000000"
+    }
+  }
+]
