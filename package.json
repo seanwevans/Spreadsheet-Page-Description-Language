@@ -8,6 +8,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "golden:update": "node scripts/update-golden.js"
   }
 }

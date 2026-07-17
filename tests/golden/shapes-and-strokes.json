@@ -1,0 +1,136 @@
+[
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 10,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 11,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 12,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 13,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 10,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 11,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 12,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 13,
+      "Background": "#0000ff"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 10,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 11,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 12,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 11,
+      "Col": 13,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 10,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 11,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 12,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 12,
+      "Col": 13,
+      "BorderColor": "#ff0000",
+      "BorderStyle": "thick"
+    }
+  },
+  {
+    "fields": {
+      "Row": 15,
+      "Col": 2,
+      "Value": "Outlined box above",
+      "TextColor": "#000000",
+      "Bold": false,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 3
+    }
+  }
+]

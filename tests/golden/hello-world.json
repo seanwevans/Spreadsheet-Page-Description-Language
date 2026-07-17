@@ -1,0 +1,38 @@
+[
+  {
+    "fields": {
+      "Row": 5,
+      "Col": 5,
+      "Value": "Hello World",
+      "TextColor": "#ff0000",
+      "Bold": true,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 3
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 5,
+      "Value": "Welcome to SPDL",
+      "TextColor": "#000000",
+      "Bold": true,
+      "Italic": false,
+      "Underline": false,
+      "Rotation": 0,
+      "Alignment": "",
+      "StrokeWidth": 3
+    }
+  },
+  {
+    "fields": {
+      "Row": 9,
+      "Col": 5,
+      "Checkbox": true,
+      "Alignment": "VMiddle"
+    }
+  }
+]
