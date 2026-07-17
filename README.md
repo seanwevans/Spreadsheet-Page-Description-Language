@@ -199,6 +199,9 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `(opt1,opt2,...) /Dropdown` — Merged dropdown list across six columns with a yellow background and border.
 - `(note) /Note` — Adds a cell note at the cursor.
 
+## Linting a Stream
+`node spdl-lint.js stream.spdl` (or pipe via stdin) validates a stream against the grammar in [SPEC.md](SPEC.md): unrecognized lines — which renderers silently skip — are errors, and commands that parse but render as no-ops (`/NewPage` before `MediaBox`, short pixel-art payloads, out-of-range colors) are warnings. Exits non-zero on errors, so it can gate CI or a pre-commit hook. `npm run lint:examples` checks the bundled examples.
+
 ## Playground
 [`docs/playground.html`](docs/playground.html) is a self-contained browser preview: open it locally (it loads `spdl-parser.js` from the repo root) or enable GitHub Pages for the repository root and share the hosted URL. It renders a stream live as you type — no spreadsheet required.
 
