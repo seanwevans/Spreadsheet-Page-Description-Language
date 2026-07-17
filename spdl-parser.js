@@ -53,6 +53,10 @@
   // Exact-match operators that take no operands.
   const operators = ["/CheckBox", "/NewPage", "f", "S"];
 
+  // Upper bound on the cells a single f/S can touch. Without it a stream
+  // like "9999 9999 9999 9999 re" + "f" would enqueue ~100M cell operations.
+  const MAX_SHAPE_CELLS = 100000;
+
   // Resolves \( \) \\ escape sequences in a matched text operand.
   function unescapeTextOperand(value) {
     return value.replace(/\\([()\\])/g, "$1");
@@ -240,7 +244,7 @@
       }
       if (command === "f" || command === "S") {
         const path = state.currentPath;
-        if (path && path.w > 0 && path.h > 0) {
+        if (path && path.w > 0 && path.h > 0 && path.w * path.h <= MAX_SHAPE_CELLS) {
           const baseY = state.pageTop + path.y;
           for (let row = 0; row < path.h; row += 1) {
             for (let col = 0; col < path.w; col += 1) {

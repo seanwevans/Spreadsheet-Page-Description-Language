@@ -77,6 +77,15 @@ function lint(stream) {
       continue;
     }
 
+    if ((match = command.match(patterns.rectangle))) {
+      const w = Math.floor(parseFloat(match[3]));
+      const h = Math.floor(parseFloat(match[4]));
+      if (w > 0 && h > 0 && w * h > 100000) {
+        report(warnings, `rectangle covers ${w * h} cells; shapes above 100000 cells are skipped`);
+      }
+      continue;
+    }
+
     if ((match = command.match(patterns.fontSize))) {
       if (!(parseFloat(match[1]) > 0)) {
         report(warnings, "non-positive Ts resets the font size to the default");
