@@ -199,6 +199,9 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `(opt1,opt2,...) /Dropdown` — Merged dropdown list across six columns with a yellow background and border.
 - `(note) /Note` — Adds a cell note at the cursor.
 
+## Playground
+[`docs/playground.html`](docs/playground.html) is a self-contained browser preview: open it locally (it loads `spdl-parser.js` from the repo root) or enable GitHub Pages for the repository root and share the hosted URL. It renders a stream live as you type — no spreadsheet required.
+
 ## Examples
 Ready-to-run streams live in [`examples/`](examples/) (`hello-world.spdl`, `shapes-and-strokes.spdl`, and the fuller `example.spdl` used by the Airtable config). Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`, or point the Airtable renderer's `streamPath` at one of the files.
 

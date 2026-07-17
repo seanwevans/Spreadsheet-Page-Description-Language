@@ -79,7 +79,10 @@
     return map[code] || "";
   }
 
-  function parseSpdl(stream) {
+  // Parses a stream into { records, pages }: `records` is the cell-operation
+  // list, `pages` the page regions ({ top, width, height }) that MediaBox and
+  // /NewPage established — enough for a renderer to draw page backgrounds.
+  function parseSpdlDocument(stream) {
     const lines = stream
       .split(/\r?\n/)
       .map((l) => l.trim())
@@ -104,6 +107,7 @@
     };
 
     const records = [];
+    const pages = [];
 
     // Fields set to undefined are omitted entirely so the operation list is
     // stable under JSON round-trips (golden files) and never sends explicit
@@ -189,6 +193,9 @@
         state.pageWidth = parseInt(match[1], 10) || 0;
         state.pageHeight = parseInt(match[2], 10) || 0;
         state.pageTop = state.cursorY;
+        if (state.pageWidth > 0 && state.pageHeight > 0) {
+          pages.push({ top: state.pageTop, width: state.pageWidth, height: state.pageHeight });
+        }
         continue;
       }
       if (command === "/NewPage") {
@@ -196,6 +203,7 @@
           state.pageTop += state.pageHeight + 2;
           state.cursorX = 1;
           state.cursorY = state.pageTop;
+          pages.push({ top: state.pageTop, width: state.pageWidth, height: state.pageHeight });
         }
         continue;
       }
@@ -346,11 +354,16 @@
       // Unrecognized command: ignore rather than guessing.
     }
 
-    return records;
+    return { records, pages };
+  }
+
+  function parseSpdl(stream) {
+    return parseSpdlDocument(stream).records;
   }
 
   return {
     parseSpdl,
+    parseSpdlDocument,
     patterns,
     operators,
     mapLineWidth,
