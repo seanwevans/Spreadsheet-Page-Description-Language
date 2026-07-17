@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPDL Playground</title>
+<style>
+  :root {
+    --canvas-bg: #505050;
+    --cell: 25px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  header {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+  }
+  header h1 { font-size: 1.05rem; margin: 0; }
+  header .meta { color: #666; font-size: 0.85rem; }
+  header a { color: #3567c4; }
+  main {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+  #editor {
+    width: 34%;
+    min-width: 260px;
+    border: none;
+    border-right: 1px solid #ddd;
+    padding: 0.8rem;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+  }
+  #view {
+    flex: 1;
+    overflow: auto;
+    background: #2e2e2e;
+    padding: 1rem;
+  }
+  #grid {
+    display: grid;
+    background: var(--canvas-bg);
+    width: max-content;
+    border: 1px solid #222;
+  }
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    overflow: visible;
+    font-size: 11px;
+    line-height: 1.1;
+    white-space: nowrap;
+    position: relative;
+  }
+  .cell.page { background: #fff; }
+  .cell a { color: inherit; }
+  .cell .note-marker {
+    position: absolute;
+    top: 0; right: 0;
+    border-style: solid;
+    border-width: 0 6px 6px 0;
+    border-color: transparent #e07b00 transparent transparent;
+  }
+  .cell select { max-width: calc(var(--cell) * 6); font-size: 10px; }
+  .cell img { max-width: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SPDL Playground</h1>
+  <span class="meta"><span id="stats"></span> · <a href="../SPEC.md">spec</a> · <a href="https://github.com/seanwevans/Spreadsheet-Page-Description-Language">repo</a></span>
+</header>
+<main>
+  <textarea id="editor" spellcheck="false" aria-label="SPDL stream"></textarea>
+  <div id="view"><div id="grid"></div></div>
+</main>
+<script src="../spdl-parser.js"></script>
+<script>
+  const DEFAULT_STREAM = `16 20 MediaBox
+/F2 15 Tf
+/MoveTo 3 2
+(SPDL Playground) Tj
+/F1 15 Tf
+/MoveTo 3 4
+(Edit the stream on the left.) Tj
+0 0 1 rg
+1 0 0 SC
+2 6 6 3 re
+f
+S
+0 0 0 rg
+/MoveTo 3 10
+(https://example.com) (A link) /Link
+/MoveTo 3 12
+(Alpha,Beta,Gamma) /Dropdown
+/MoveTo 3 14
+/CheckBox
+/MoveTo 5 14
+(Done?) Tj
+/MoveTo 3 16
+3 3 ID 121212121
+/NewPage
+/MoveTo 3 2
+(Page two) Tj`;
+
+  const editor = document.getElementById("editor");
+  const grid = document.getElementById("grid");
+  const stats = document.getElementById("stats");
+
+  function alignToFlex(alignment) {
+    const h = { HLeft: "flex-start", HCenter: "center", HRight: "flex-end" };
+    const v = { VTop: "flex-start", VMiddle: "center", VBottom: "flex-end" };
+    return { h: h[alignment] || null, v: v[alignment] || null };
+  }
+
+  function render() {
+    const { records, pages } = SPDL.parseSpdlDocument(editor.value);
+
+    let maxRow = 20;
+    let maxCol = 26;
+    for (const page of pages) {
+      maxRow = Math.max(maxRow, page.top + page.height - 1);
+      maxCol = Math.max(maxCol, page.width);
+    }
+    for (const record of records) {
+      maxRow = Math.max(maxRow, record.fields.Row);
+      maxCol = Math.max(maxCol, record.fields.Col);
+    }
+    maxRow = Math.min(maxRow + 1, 500);
+    maxCol = Math.min(maxCol, 60);
+
+    grid.style.gridTemplateColumns = `repeat(${maxCol}, var(--cell))`;
+    grid.replaceChildren();
+
+    const cells = new Map();
+    for (let r = 1; r <= maxRow; r++) {
+      for (let c = 1; c <= maxCol; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        for (const page of pages) {
+          if (r >= page.top && r < page.top + page.height && c <= page.width) {
+            cell.classList.add("page");
+            break;
+          }
+        }
+        grid.appendChild(cell);
+        cells.set(`${r}:${c}`, cell);
+      }
+    }
+
+    for (const record of records) {
+      const f = record.fields;
+      const cell = cells.get(`${f.Row}:${f.Col}`);
+      if (!cell) continue;
+
+      if (f.Background) cell.style.background = f.Background;
+      if (f.BorderColor) {
+        cell.style.boxShadow = `inset 0 0 0 ${f.BorderStyle === "double" ? 3 : f.BorderStyle === "thick" ? 2 : 1}px ${f.BorderColor}`;
+      }
+
+      const align = alignToFlex(f.Alignment);
+      if (align.h) cell.style.justifyContent = align.h;
+      if (align.v) cell.style.alignItems = align.v;
+
+      if (f.Checkbox) {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.disabled = true;
+        cell.style.justifyContent = "center";
+        cell.style.alignItems = "center";
+        cell.appendChild(box);
+      } else if (f.Dropdown !== undefined) {
+        const select = document.createElement("select");
+        const options = (f.Note || "").startsWith("Options: ")
+          ? f.Note.slice("Options: ".length).split(", ")
+          : [f.Dropdown];
+        for (const option of options) {
+          const el = document.createElement("option");
+          el.textContent = option;
+          el.selected = option === f.Dropdown;
+          select.appendChild(el);
+        }
+        cell.appendChild(select);
+      } else if (f.ImageURL) {
+        const img = document.createElement("img");
+        img.src = f.ImageURL;
+        img.alt = "";
+        if (f.ImageWidth) img.width = f.ImageWidth;
+        if (f.ImageHeight) img.height = f.ImageHeight;
+        cell.appendChild(img);
+      } else if (f.Value !== undefined && f.Value !== "") {
+        let target = cell;
+        if (f.Link) {
+          target = document.createElement("a");
+          target.href = f.Link;
+          target.target = "_blank";
+          target.rel = "noopener";
+          cell.appendChild(target);
+        }
+        target.textContent = String(f.Value);
+        if (f.TextColor) cell.style.color = f.TextColor;
+        if (f.Bold) cell.style.fontWeight = "bold";
+        if (f.Italic) cell.style.fontStyle = "italic";
+        if (f.Underline) cell.style.textDecoration = "underline";
+        if (f.Rotation) cell.style.transform = `rotate(${-f.Rotation}deg)`;
+        cell.style.zIndex = 1;
+      }
+
+      if (f.Note && f.Dropdown === undefined) {
+        cell.title = f.Note;
+        const marker = document.createElement("span");
+        marker.className = "note-marker";
+        cell.appendChild(marker);
+      }
+    }
+
+    stats.textContent = `${records.length} cell ops · ${pages.length} page(s)`;
+  }
+
+  let timer = null;
+  editor.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(render, 200);
+  });
+
+  editor.value = DEFAULT_STREAM;
+  render();
+</script>
+</body>
+</html>
