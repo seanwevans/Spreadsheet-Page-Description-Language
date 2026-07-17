@@ -104,7 +104,8 @@ Renderers maintain the following state, with these defaults:
 | `S` | Stroke the current path's **perimeter** with the stroke color and width. |
 
 Rectangles that extend past the canvas are clamped to it; rectangles entirely
-outside the canvas are skipped with a log message.
+outside the canvas are skipped with a log message. A single `f`/`S` may touch
+at most 100,000 cells — larger shapes are skipped as malformed input.
 
 ### Images
 
