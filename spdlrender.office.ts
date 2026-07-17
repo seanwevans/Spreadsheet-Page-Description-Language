@@ -61,9 +61,13 @@ function main(workbook: ExcelScript.Workbook) {
   let pageWidth = 0;
   let pageHeight = 0;
   let mediaBoxApplied = false;
+  // Captured so that "6 TA" (and above) can restore the sheet's defaults,
+  // mirroring the Google Apps Script renderer.
+  const defaultHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
+  const defaultVerticalAlignment = ExcelScript.VerticalAlignment.top;
   let currentFontSize = defaultFontSize;
-  let currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
-  let currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
+  let currentHorizontalAlignment = defaultHorizontalAlignment;
+  let currentVerticalAlignment = defaultVerticalAlignment;
   let isBold = false;
   let isItalic = false;
   let underline = false;
@@ -273,7 +277,8 @@ function main(workbook: ExcelScript.Workbook) {
       }
 
       if ((match = command.match(FONT_SIZE_PATTERN))) {
-        currentFontSize = parseInt(match[1], 10) || defaultFontSize;
+        const parsedFontSize = parseFloat(match[1]);
+        currentFontSize = (!isNaN(parsedFontSize) && parsedFontSize > 0) ? parsedFontSize : defaultFontSize;
         continue;
       }
 
@@ -286,8 +291,8 @@ function main(workbook: ExcelScript.Workbook) {
         if (alignmentCode === 4) currentVerticalAlignment = ExcelScript.VerticalAlignment.center;
         if (alignmentCode === 5) currentVerticalAlignment = ExcelScript.VerticalAlignment.bottom;
         if (alignmentCode >= 6) {
-          currentHorizontalAlignment = ExcelScript.HorizontalAlignment.left;
-          currentVerticalAlignment = ExcelScript.VerticalAlignment.top;
+          currentHorizontalAlignment = defaultHorizontalAlignment;
+          currentVerticalAlignment = defaultVerticalAlignment;
         }
         continue;
       }
