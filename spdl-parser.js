@@ -48,14 +48,121 @@
     alignCode: /^(\d+)\s+TA$/,
     td: /^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$/,
     moveTo: /^\/MoveTo\s+(-?\d+)\s+(-?\d+)$/,
+    line: /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+l$/,
+    textBox: /^(\d+)\s+(\d+)\s+\(((?:[^)\\]|\\.)*)\)\s+\/TextBox$/,
+    colWidth: /^(\d+)\s+\/ColWidth$/,
+    rowHeight: /^(\d+)\s+\/RowHeight$/,
+    def: /^\/Def\s+([A-Za-z][A-Za-z0-9_-]*)$/,
+    doDef: /^\/Do\s+([A-Za-z][A-Za-z0-9_-]*)$/,
   };
 
   // Exact-match operators that take no operands.
-  const operators = ["/CheckBox", "/NewPage", "f", "S"];
+  const operators = ["/CheckBox", "/NewPage", "/EndDef", "f", "S", "q", "Q"];
 
   // Upper bound on the cells a single f/S can touch. Without it a stream
   // like "9999 9999 9999 9999 re" + "f" would enqueue ~100M cell operations.
   const MAX_SHAPE_CELLS = 100000;
+
+  // How many characters of 15pt text fit in a default 25px cell. /TextBox
+  // wraps against `width * CHARS_PER_CELL`; spreadsheets spill a long string
+  // over the empty cells to its right, so this only has to be close.
+  const CHARS_PER_CELL = 4;
+
+  // Guards against a definition that invokes itself, directly or through
+  // another definition.
+  const MAX_DEF_DEPTH = 8;
+
+  // Graphics state saved by `q` and restored by `Q` — everything except the
+  // page structure, which is document layout rather than drawing state.
+  const SAVED_STATE_KEYS = [
+    "cursorX",
+    "cursorY",
+    "fill",
+    "stroke",
+    "strokeWidth",
+    "bold",
+    "italic",
+    "underline",
+    "rotation",
+    "alignment",
+    "fontSize",
+    "currentPath",
+  ];
+
+  // Greedy word wrap into lines of at most `columns * CHARS_PER_CELL`
+  // characters. A word longer than a line gets a line of its own rather than
+  // being split, matching how a spreadsheet overflows one long string.
+  function wrapText(text, columns) {
+    const limit = Math.max(1, columns * CHARS_PER_CELL);
+    const lines = [];
+    let current = "";
+
+    for (const word of text.split(/\s+/).filter((w) => w.length > 0)) {
+      if (current.length === 0) {
+        current = word;
+      } else if (current.length + 1 + word.length <= limit) {
+        current += ` ${word}`;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+    }
+    if (current.length > 0) lines.push(current);
+    return lines;
+  }
+
+  /**
+   * Expands `/Def name … /EndDef` blocks and replays them at `/Do name`.
+   *
+   * Definitions are collected and removed here so the main loop only ever
+   * sees drawing commands. An unknown name, an unterminated definition or a
+   * recursive one is dropped — the same "skip what you cannot interpret"
+   * rule the rest of the language follows.
+   */
+  function expandDefinitions(lines) {
+    const definitions = new Map();
+    const expanded = [];
+    let capturing = null;
+
+    for (const line of lines) {
+      const beginMatch = line.match(patterns.def);
+      if (beginMatch) {
+        // A nested /Def is not a nesting construct: it ends the previous one.
+        capturing = { name: beginMatch[1], body: [] };
+        definitions.set(capturing.name, capturing.body);
+        continue;
+      }
+      if (line === "/EndDef") {
+        capturing = null;
+        continue;
+      }
+      if (capturing) {
+        capturing.body.push(line);
+        continue;
+      }
+      expanded.push(line);
+    }
+
+    const replay = (lineList, depth, active) => {
+      const out = [];
+      for (const line of lineList) {
+        const useMatch = line.match(patterns.doDef);
+        if (!useMatch) {
+          out.push(line);
+          continue;
+        }
+        const name = useMatch[1];
+        const body = definitions.get(name);
+        if (!body || depth >= MAX_DEF_DEPTH || active.has(name)) continue;
+        active.add(name);
+        out.push(...replay(body, depth + 1, active));
+        active.delete(name);
+      }
+      return out;
+    };
+
+    return replay(expanded, 0, new Set());
+  }
 
   // Resolves \( \) \\ escape sequences in a matched text operand.
   function unescapeTextOperand(value) {
@@ -92,14 +199,18 @@
     return map[code] || "";
   }
 
-  // Parses a stream into { records, pages }: `records` is the cell-operation
-  // list, `pages` the page regions ({ top, width, height }) that MediaBox and
-  // /NewPage established — enough for a renderer to draw page backgrounds.
+  // Parses a stream into { records, pages, columns, rows }: `records` is the
+  // cell-operation list, `pages` the page regions ({ top, width, height })
+  // that MediaBox and /NewPage established, and `columns`/`rows` the sizes
+  // /ColWidth and /RowHeight requested — enough for a renderer to draw page
+  // backgrounds and lay out the sheet.
   function parseSpdlDocument(stream) {
-    const lines = stream
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    const lines = expandDefinitions(
+      stream
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0),
+    );
 
     const state = {
       cursorX: 1,
@@ -121,6 +232,11 @@
 
     const records = [];
     const pages = [];
+    // Sheet geometry: `/ColWidth` and `/RowHeight` size the cursor's column
+    // and row. Last request for an index wins.
+    const columnWidths = new Map();
+    const rowHeights = new Map();
+    const stateStack = [];
 
     // Fields set to undefined are omitted entirely so the operation list is
     // stable under JSON round-trips (golden files) and never sends explicit
@@ -153,6 +269,28 @@
           Alignment: state.alignment,
           StrokeWidth: state.strokeWidth,
         });
+        continue;
+      }
+
+      // TEXT BOX — wrapped text, one wrapped line per row of the box.
+      if ((match = command.match(patterns.textBox))) {
+        const boxWidth = parseInt(match[1], 10);
+        const boxHeight = parseInt(match[2], 10);
+        if (boxWidth > 0 && boxHeight > 0) {
+          const wrapped = wrapText(unescapeTextOperand(match[3]), boxWidth);
+          for (let row = 0; row < Math.min(wrapped.length, boxHeight); row += 1) {
+            enqueueCell(state.cursorX, state.cursorY + row, {
+              Value: wrapped[row],
+              TextColor: state.fill,
+              Bold: state.bold,
+              Italic: state.italic,
+              Underline: state.underline,
+              Rotation: state.rotation,
+              Alignment: state.alignment,
+              StrokeWidth: state.strokeWidth,
+            });
+          }
+        }
         continue;
       }
 
@@ -226,6 +364,31 @@
         continue;
       }
 
+      // GRAPHICS STATE STACK
+      if (command === "q") {
+        const saved = {};
+        for (const key of SAVED_STATE_KEYS) saved[key] = state[key];
+        stateStack.push(saved);
+        continue;
+      }
+      if (command === "Q") {
+        // An unmatched Q is a no-op rather than an error: the stream is a
+        // linear command list, and renderers never abort on one bad command.
+        const saved = stateStack.pop();
+        if (saved) Object.assign(state, saved);
+        continue;
+      }
+
+      // SHEET GEOMETRY
+      if ((match = command.match(patterns.colWidth))) {
+        columnWidths.set(state.cursorX, parseInt(match[1], 10));
+        continue;
+      }
+      if ((match = command.match(patterns.rowHeight))) {
+        rowHeights.set(state.cursorY, parseInt(match[1], 10));
+        continue;
+      }
+
       // LINE WIDTH
       if ((match = command.match(patterns.lineWidth))) {
         state.strokeWidth = parseInt(match[1], 10);
@@ -256,6 +419,31 @@
                 Background: command === "f" ? state.fill : undefined,
                 BorderColor: command === "S" ? state.stroke : undefined,
                 BorderStyle: command === "S" ? mapLineWidth(state.strokeWidth) : undefined,
+              });
+            }
+          }
+        }
+        continue;
+      }
+
+      // LINES — an axis-aligned run of cells stroked like a degenerate
+      // rectangle. Diagonals have no cell-grid representation, so they are
+      // skipped rather than approximated.
+      if ((match = command.match(patterns.line))) {
+        const x1 = Math.floor(parseFloat(match[1]));
+        const y1 = Math.floor(parseFloat(match[2]));
+        const x2 = Math.floor(parseFloat(match[3]));
+        const y2 = Math.floor(parseFloat(match[4]));
+        if (x1 === x2 || y1 === y2) {
+          const left = Math.min(x1, x2);
+          const right = Math.max(x1, x2);
+          const top = state.pageTop + Math.min(y1, y2);
+          const bottom = state.pageTop + Math.max(y1, y2);
+          for (let row = top; row <= bottom; row += 1) {
+            for (let col = left; col <= right; col += 1) {
+              enqueueCell(col, row, {
+                BorderColor: state.stroke,
+                BorderStyle: mapLineWidth(state.strokeWidth),
               });
             }
           }
@@ -372,7 +560,16 @@
       // Unrecognized command: ignore rather than guessing.
     }
 
-    return { records, pages };
+    const toSizeList = (map, key) => [...map.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([index, size]) => ({ [key]: index, size }));
+
+    return {
+      records,
+      pages,
+      columns: toSizeList(columnWidths, "col"),
+      rows: toSizeList(rowHeights, "row"),
+    };
   }
 
   function parseSpdl(stream) {
@@ -384,6 +581,9 @@
     parseSpdlDocument,
     patterns,
     operators,
+    expandDefinitions,
+    wrapText,
+    CHARS_PER_CELL,
     mapLineWidth,
     parseColor,
     normalizeAlignment,

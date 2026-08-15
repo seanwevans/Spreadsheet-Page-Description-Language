@@ -31,6 +31,8 @@ function createHarness(commands) {
     checkboxes: [],
     validations: [],
     images: [],
+    columnWidths: [],
+    rowHeights: [],
     apiCalls: 0,
     bulkCalls: {},
   };
@@ -109,6 +111,14 @@ function createHarness(commands) {
     },
     setColumnWidths() { countCall('setColumnWidths'); },
     setRowHeights() { countCall('setRowHeights'); },
+    setColumnWidth(column, width) {
+      countCall('setColumnWidth');
+      model.columnWidths.push({ column, width });
+    },
+    setRowHeight(row, height) {
+      countCall('setRowHeight');
+      model.rowHeights.push({ row, height });
+    },
     getImages() { return []; },
     insertImage(url, col, row) {
       countCall('insertImage');
