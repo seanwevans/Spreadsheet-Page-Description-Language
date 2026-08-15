@@ -42,7 +42,7 @@
     align: /^\/Align\s+(\S+)$/,
     fillColor: /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/,
     strokeColor: /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/,
-    font: /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/,
+    font: /^\/F(\d+)(?:\s+(\d*\.?\d+))?\s+Tf$/,
     underline: /^([01])\s+Tr$/,
     fontSize: /^([+-]?\d*\.?\d+)\s+Ts$/,
     alignCode: /^(\d+)\s+TA$/,
@@ -59,8 +59,10 @@
   // Exact-match operators that take no operands.
   const operators = ["/CheckBox", "/NewPage", "/EndDef", "f", "S", "q", "Q"];
 
-  // Upper bound on the cells a single f/S can touch. Without it a stream
-  // like "9999 9999 9999 9999 re" + "f" would enqueue ~100M cell operations.
+  // Upper bound on the cells a single f/S can touch, applied *after* the
+  // shape is clamped to the canvas. Without it an unbounded canvas plus a
+  // stream like "9999 9999 9999 9999 re" + "f" would enqueue ~100M cell
+  // operations.
   const MAX_SHAPE_CELLS = 100000;
 
   // How many characters of 15pt text fit in a default 25px cell. /TextBox
@@ -227,7 +229,7 @@
       rotation: 0,
       alignment: "",
       currentPath: null,
-      fontSize: 15,
+      fontSize: DEFAULT_FONT_SIZE,
     };
 
     const records = [];
@@ -238,10 +240,20 @@
     const rowHeights = new Map();
     const stateStack = [];
 
+    // `recordIndex` is how many cell operations preceded the page draw, so a
+    // consumer can interleave page chrome with content instead of assuming
+    // all pages are drawn first: content written before a /NewPage is painted
+    // over by that page, exactly as it is in the spreadsheet renderers.
+    const pushPage = (top, width, height) => {
+      pages.push({ top, width, height, recordIndex: records.length });
+    };
+
     // Fields set to undefined are omitted entirely so the operation list is
     // stable under JSON round-trips (golden files) and never sends explicit
-    // undefined values to consumers.
+    // undefined values to consumers. Writes outside the canvas are dropped —
+    // the spreadsheet renderers log and skip them.
     const enqueueCell = (x, y, fields) => {
+      if (!isInsideCanvas(x, y)) return;
       const cleaned = { Row: y, Col: x };
       for (const [key, value] of Object.entries(fields)) {
         if (value !== undefined) cleaned[key] = value;
@@ -262,6 +274,7 @@
         enqueueCell(state.cursorX, state.cursorY, {
           Value: unescapeTextOperand(match[1]),
           TextColor: state.fill,
+          FontSize: state.fontSize,
           Bold: state.bold,
           Italic: state.italic,
           Underline: state.underline,
@@ -325,9 +338,11 @@
 
       // CHECKBOX
       if (command === "/CheckBox") {
+        // A checkbox is centered chrome, not styled text: the active
+        // alignment does not apply to it in any renderer.
         enqueueCell(state.cursorX, state.cursorY, {
           Checkbox: true,
-          Alignment: state.alignment || "VMiddle",
+          Alignment: "VMiddle",
         });
         continue;
       }
@@ -350,7 +365,7 @@
         state.pageHeight = parseInt(match[2], 10) || 0;
         state.pageTop = state.cursorY;
         if (state.pageWidth > 0 && state.pageHeight > 0) {
-          pages.push({ top: state.pageTop, width: state.pageWidth, height: state.pageHeight });
+          pushPage(state.pageTop, state.pageWidth, state.pageHeight);
         }
         continue;
       }
@@ -359,7 +374,7 @@
           state.pageTop += state.pageHeight + 2;
           state.cursorX = 1;
           state.cursorY = state.pageTop;
-          pages.push({ top: state.pageTop, width: state.pageWidth, height: state.pageHeight });
+          pushPage(state.pageTop, state.pageWidth, state.pageHeight);
         }
         continue;
       }
@@ -397,9 +412,12 @@
 
       // SHAPES
       if ((match = command.match(patterns.rectangle))) {
+        // The path's position is page-relative at *definition* time: a
+        // /NewPage between `re` and `f` must not move the shape. The other
+        // renderers resolve pageTop here too.
         state.currentPath = {
           x: parseInt(match[1], 10),
-          y: parseInt(match[2], 10),
+          y: state.pageTop + parseInt(match[2], 10),
           w: parseInt(match[3], 10),
           h: parseInt(match[4], 10),
         };
@@ -407,15 +425,21 @@
       }
       if (command === "f" || command === "S") {
         const path = state.currentPath;
-        if (path && path.w > 0 && path.h > 0 && path.w * path.h <= MAX_SHAPE_CELLS) {
-          const baseY = state.pageTop + path.y;
-          for (let row = 0; row < path.h; row += 1) {
-            for (let col = 0; col < path.w; col += 1) {
+        // Clamp to the canvas first, then bound the work: a rectangle that
+        // hangs off the edge still draws the part that fits, exactly as the
+        // spreadsheet renderers do with their clamped ranges.
+        const clamped = path && path.w > 0 && path.h > 0
+          ? clampRect(path.x, state.pageTop + path.y, path.w, path.h, canvas)
+          : null;
+        if (clamped && clamped.w * clamped.h <= MAX_SHAPE_CELLS) {
+          const baseY = clamped.y;
+          for (let row = 0; row < clamped.h; row += 1) {
+            for (let col = 0; col < clamped.w; col += 1) {
               // Strokes only touch the rectangle's perimeter, matching the
               // border-only behavior of the other renderers.
-              const onPerimeter = row === 0 || row === path.h - 1 || col === 0 || col === path.w - 1;
+              const onPerimeter = row === 0 || row === clamped.h - 1 || col === 0 || col === clamped.w - 1;
               if (command === "S" && !onPerimeter) continue;
-              enqueueCell(path.x + col, baseY + row, {
+              enqueueCell(clamped.x + col, baseY + row, {
                 Background: command === "f" ? state.fill : undefined,
                 BorderColor: command === "S" ? state.stroke : undefined,
                 BorderStyle: command === "S" ? mapLineWidth(state.strokeWidth) : undefined,
@@ -477,6 +501,7 @@
           Value: unescapeTextOperand(match[2]),
           Link: unescapeTextOperand(match[1]),
           TextColor: state.fill,
+          FontSize: state.fontSize,
           Bold: state.bold,
           Italic: state.italic,
           Underline: state.underline,
@@ -512,7 +537,11 @@
       if ((match = command.match(patterns.font))) {
         state.bold = match[1] === "2";
         state.italic = match[1] === "3";
-        state.fontSize = match[2] ? parseInt(match[2], 10) : state.fontSize;
+        if (match[2] !== undefined) {
+          // Fractional sizes are honored here just as they are for Ts.
+          const parsedSize = parseFloat(match[2]);
+          state.fontSize = parsedSize > 0 ? parsedSize : DEFAULT_FONT_SIZE;
+        }
         continue;
       }
 
@@ -523,7 +552,7 @@
 
       if ((match = command.match(patterns.fontSize))) {
         const parsedFontSize = parseFloat(match[1]);
-        state.fontSize = parsedFontSize > 0 ? parsedFontSize : 15;
+        state.fontSize = parsedFontSize > 0 ? parsedFontSize : DEFAULT_FONT_SIZE;
         continue;
       }
 
@@ -538,19 +567,18 @@
       if ((match = command.match(patterns.moveTo))) {
         let targetX = parseInt(match[1], 10);
         let targetY = parseInt(match[2], 10);
-        if (state.pageWidth > 0) {
-          targetX = Math.max(1, Math.min(state.pageWidth, targetX));
-        } else {
-          targetX = Math.max(1, targetX);
-        }
+        // Absent a page, the cursor is bounded by the canvas — the same
+        // fallback the spreadsheet renderers use (maxCols / maxRows).
+        const maxX = state.pageWidth > 0
+          ? state.pageWidth
+          : (canvas ? canvas.cols : Infinity);
+        targetX = Math.max(1, Math.min(maxX, targetX));
 
         const rawY = state.pageTop + targetY - 1;
-        if (state.pageHeight > 0) {
-          const pageBottom = state.pageTop + state.pageHeight - 1;
-          targetY = Math.max(state.pageTop, Math.min(pageBottom, rawY));
-        } else {
-          targetY = Math.max(state.pageTop, rawY);
-        }
+        const pageBottom = state.pageHeight > 0
+          ? state.pageTop + state.pageHeight - 1
+          : (canvas ? canvas.rows : Infinity);
+        targetY = Math.max(state.pageTop, Math.min(pageBottom, rawY));
 
         state.cursorX = targetX;
         state.cursorY = targetY;
@@ -572,8 +600,8 @@
     };
   }
 
-  function parseSpdl(stream) {
-    return parseSpdlDocument(stream).records;
+  function parseSpdl(stream, options) {
+    return parseSpdlDocument(stream, options).records;
   }
 
   return {

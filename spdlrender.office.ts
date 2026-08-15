@@ -267,6 +267,10 @@ function main(workbook: ExcelScript.Workbook) {
       if ((match = command.match(FONT_COMMAND_PATTERN))) {
         isBold = match[1] === "2";
         isItalic = match[1] === "3";
+        if (match[2] !== undefined) {
+          const parsedTfSize = parseFloat(match[2]);
+          currentFontSize = parsedTfSize > 0 ? parsedTfSize : defaultFontSize;
+        }
         continue;
       }
 
@@ -340,7 +344,7 @@ const PIXEL_ART_PATTERN = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
 const ALIGN_COMMAND_PATTERN = /^\/Align\s+(\S+)$/;
 const FILL_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
 const STROKE_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
-const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
+const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d*\.?\d+))?\s+Tf$/;
 const UNDERLINE_PATTERN = /^([01])\s+Tr$/;
 const FONT_SIZE_PATTERN = /^([+-]?\d*\.?\d+)\s+Ts$/;
 const ALIGN_CODE_PATTERN = /^(\d+)\s+TA$/;
@@ -447,7 +451,9 @@ function setBorder(
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
-  const toHex = (value: number) => Math.max(0, Math.min(255, Math.floor(value))).toString(16).padStart(2, "0");
+  // Components are scaled by 255 and rounded to nearest (SPEC.md), so
+  // "0.5 0.5 0.5 rg" is #808080 in every renderer.
+  const toHex = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0");
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 

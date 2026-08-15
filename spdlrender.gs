@@ -13,7 +13,7 @@ const PIXEL_ART_PATTERN = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
 const ALIGN_COMMAND_PATTERN = /^\/Align\s+(\S+)$/;
 const FILL_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
 const STROKE_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
-const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
+const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d*\.?\d+))?\s+Tf$/;
 const UNDERLINE_PATTERN = /^([01])\s+Tr$/;
 const FONT_SIZE_PATTERN = /^([+-]?\d*\.?\d+)\s+Ts$/;
 const ALIGN_CODE_PATTERN = /^(\d+)\s+TA$/;
@@ -191,9 +191,9 @@ function renderPDF() {
         let url = unescapeTextOperand(match[1]);
         let label = unescapeTextOperand(match[2]);
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
+          // A link renders with the active text styling (SPEC.md), the same
+          // as the Office Scripts renderer — underline and rotation included.
           writeText(currentX, currentY, `=HYPERLINK("${escapeFormulaString(url)}", "${escapeFormulaString(label)}")`);
-          fontLines[currentY - 1][currentX - 1] = "none";
-          rotations[currentY - 1][currentX - 1] = 0;
         } else {
           Logger.log(`Skipping link outside canvas at (${currentX}, ${currentY}): ${command}`);
         }
@@ -247,12 +247,16 @@ function renderPDF() {
           vAligns[currentY - 1][currentX - 1] = "middle";
           const dropX = currentX;
           const dropY = currentY;
+          // The dropdown's frame uses the active stroke state, the same as
+          // the Office Scripts and VBA renderers.
+          const dropStrokeColor = currentStrokeColor;
+          const dropStrokeStyle = currentLineWidth;
           deferredOps.push(() => {
             let rule = SpreadsheetApp.newDataValidation().requireValueInList(options, true).build();
             renderSheet.getRange(dropY, dropX, 1, dropdownWidth)
               .merge()
               .setDataValidation(rule)
-              .setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID);
+              .setBorder(true, true, true, true, false, false, dropStrokeColor, dropStrokeStyle);
           });
         }
         continue;
@@ -470,6 +474,10 @@ function renderPDF() {
       if ((match = command.match(FONT_COMMAND_PATTERN))) {
         isBold = match[1] === "2" ? "bold" : "normal";
         isItalic = match[1] === "3" ? "italic" : "normal";
+        if (match[2] !== undefined) {
+          const parsedTfSize = parseFloat(match[2]);
+          currentFontSize = parsedTfSize > 0 ? parsedTfSize : defaultFontSize;
+        }
         continue;
       }
       if ((match = command.match(UNDERLINE_PATTERN))) {
@@ -667,7 +675,9 @@ function parseRectangleCommand(command) {
 
 function rgbToHex(r, g, b) {
   const clamp = (value) => {
-    const n = Math.floor(Number(value));
+    // Components are scaled by 255 and rounded to nearest (SPEC.md), so
+    // "0.5 0.5 0.5 rg" is #808080 in every renderer.
+    const n = Math.round(Number(value));
     if (isNaN(n)) return 0;
     return Math.max(0, Math.min(255, n));
   };

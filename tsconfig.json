@@ -1,0 +1,18 @@
+{
+  "//": "Type-checks the Office Scripts renderer against types/excelscript.d.ts. Nothing is emitted — Office Scripts are pasted into Excel as source.",
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "strict": true,
+    "noEmit": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": []
+  },
+  "files": [
+    "types/excelscript.d.ts",
+    "types/office-scripts-globals.d.ts",
+    "spdlrender.office.ts"
+  ]
+}

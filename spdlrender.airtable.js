@@ -9,8 +9,9 @@
  *   - `02_Rendered_View`: grid table where one record = one cell
  *
  * The grid table should have fields: Row (number), Col (number), Value (rich
- * text/string), Background (color hex), TextColor (hex), Bold (checkbox), Italic
- * (checkbox), Underline (checkbox), Link (url), Rotation (number), Alignment
+ * text/string), Background (color hex), TextColor (hex), FontSize (number),
+ * Bold (checkbox), Italic (checkbox), Underline (checkbox), Link (url),
+ * Rotation (number), Alignment
  * (single select: HLeft, HCenter, HRight, VTop, VMiddle, VBottom), BorderColor
  * (hex), BorderStyle (string), StrokeWidth (number), Attachment (attachment),
  * ImageURL (url or text), ImageWidth (number), ImageHeight (number),

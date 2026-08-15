@@ -19,6 +19,9 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 - [Airtable Renderer (API-backed)](#airtable-renderer-api-backed)
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
+- [Conformance Suite](#conformance-suite)
+- [Linting a Stream](#linting-a-stream)
+- [Development](#development)
 - [Examples](#examples)
 - [Tips and Limitations](#tips-and-limitations)
 
@@ -93,7 +96,7 @@ Apple Numbers does not offer as rich an API as Google Sheets or Office, but the 
 `spdlrender.airtable.js` lets you push SPDL streams into Airtable bases that expose REST APIs but lack native scripting. The renderer maps one record per cell in a grid-style table and uses `performUpsert` on `Row`+`Col` to avoid duplicates.
 
 ### Airtable table schema
-- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `ImageURL` (URL or single-line text), `ImageWidth` (number), `ImageHeight` (number), `Meta` (long text for JSON metadata), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
+- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `FontSize` (number), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `ImageURL` (URL or single-line text), `ImageWidth` (number), `ImageHeight` (number), `Meta` (long text for JSON metadata), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
 - **01_Hex_Stream** (optional): store SPDL commands for reference. The script expects the stream locally (stdin/file); storing it in Airtable is for traceability only.
 
 ### Configuration
@@ -130,7 +133,7 @@ When `truncateTable` is enabled the script deletes existing records in batches o
 
 ### Supported SPDL commands and constraints
 - `MediaBox`, `/NewPage`, `/MoveTo`, `Td` — cursor and paging; Y is clamped to the last defined page height.
-- `(text) Tj` — writes text with fill color, bold/italic, underline, rotation, and alignment fields.
+- `(text) Tj` — writes text with fill color, font size, bold/italic, underline, rotation, and alignment fields.
 - `(url) (label) /Link` — stores label and URL; Airtable renders hyperlinks if the field type supports it.
 - `r g b rg` / `r g b SC` — maps to `Background`/`BorderColor` hex values.
 - `x y w h re` + `f` or `S` — fills rectangular regions (or strokes their perimeter cells) by upserting individual cells.
@@ -172,7 +175,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `(text) Tj` — Write text at the current cursor with active styling (fill color, weight, style, rotation, alignment).
 - `w h (text) /TextBox` — Write word-wrapped text into a `w × h` box at the cursor, one wrapped line per row (roughly four characters per cell at the default size). Lines past `h` are dropped.
 - `/Link` — `(url) (label) /Link` inserts a hyperlink formula using the current font settings.
-- `/F2 15 Tf` — Sets **bold** font; `/F3` sets **italic**. Font size defaults to 15 pt; adjust with `Ts` in the command stream (see examples).
+- `/F2 15 Tf` — Sets **bold** font; `/F3` sets **italic**. The optional size operand sets the font size (fractions allowed); font size defaults to 15 pt and can also be set with `Ts` (see examples).
 - `1 Tr` — Underline on; `0 Tr` — remove underline.
 - `n TA` — Alignment shorthand:
   - `0/1/2` → horizontal left/center/right
@@ -215,11 +218,46 @@ Definitions expand before the stream is interpreted, so they carry no state of t
 - `(opt1,opt2,...) /Dropdown` — Merged dropdown list across six columns with a yellow background and border.
 - `(note) /Note` — Adds a cell note at the cursor.
 
+## Conformance Suite
+SPDL's promise is that a stream renders the same everywhere. `npm test` enforces it:
+
+- **`tests/conformance.test.js`** runs the Apps Script and Office Scripts renderers over a shared fixture set (`tests/conformance/fixtures.js`) plus every bundled example, and checks each against the reference parser *and* against each other. Renderers are compared through a platform-neutral cell model (`tests/helpers/canonical.js`) so Excel's `☐` placeholder, Sheets' checkbox control, and Airtable's `Checkbox` field can be held to the same standard. A renderer may do more than the reference can express; it may never contradict it.
+- **`tests/conformance.property.test.js`** does the same over randomly generated valid streams (seeded — set `SPDL_CONFORMANCE_SEED` / `SPDL_CONFORMANCE_ITERATIONS` to explore).
+- **`tests/pattern-parity.test.js`** reads the command-pattern tables back out of all four renderer sources — including the VBA one, which cannot be executed here — and checks they classify the same commands the same way and extract operands into the same capture groups.
+- **`npm run typecheck`** type-checks `spdlrender.office.ts` against `types/excelscript.d.ts`.
+
+The Office Scripts harness needs TypeScript stripped from the source: it uses Node's built-in `module.stripTypeScriptTypes` (Node 22.13+) and falls back to the optional `typescript` devDependency, skipping those tests with an explanatory message if neither is available. Run `npm install` to be sure they execute.
+
+When a bug turns out to be two renderers disagreeing, add a fixture — that is what stops it from coming back.
+
 ## Linting a Stream
-`node spdl-lint.js stream.spdl` (or pipe via stdin) validates a stream against the grammar in [SPEC.md](SPEC.md): unrecognized lines — which renderers silently skip — are errors, and commands that parse but render as no-ops (`/NewPage` before `MediaBox`, short pixel-art payloads, out-of-range colors) are warnings. Exits non-zero on errors, so it can gate CI or a pre-commit hook. `npm run lint:examples` checks the bundled examples.
+`node spdl-lint.js stream.spdl` (or pipe via stdin) validates a stream against the grammar in [SPEC.md](SPEC.md): unrecognized lines — which renderers silently skip — are errors, and commands that parse but render as no-ops (`/NewPage` before `MediaBox`, short pixel-art payloads, out-of-range colors) are warnings. Exits non-zero on errors, so it can gate CI or a pre-commit hook.
+
+```
+Usage: spdl-lint [options] [file ...]
+
+  --json               report findings as JSON instead of text
+  --max-warnings <n>   fail when more than n warnings are found
+  --quiet              report errors only (warnings are still counted)
+  -h, --help           show this message
+```
+
+`--json` emits `{ results: [{ file, errors, warnings }], errorCount, warningCount, maxWarnings, ok }` for editors and CI annotations. `npm run lint:examples` checks the bundled examples with `--max-warnings 0`.
+
+## Development
+| Command | What it runs |
+| --- | --- |
+| `npm test` | The full test suite (`node --test`) |
+| `npm run lint` | ESLint over the JavaScript and the Apps Script renderer |
+| `npm run lint:examples` | `spdl-lint` over the bundled examples |
+| `npm run golden:update` | Regenerates `tests/golden/*.json` |
+
+CI runs the tests on Node 18/20/22 and the two lint steps on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to change the language without letting the renderers drift apart.
 
 ## Playground
-[`docs/playground.html`](docs/playground.html) is a self-contained browser preview: open it locally (it loads `spdl-parser.js` from the repo root) or enable GitHub Pages for the repository root and share the hosted URL. It renders a stream live as you type — no spreadsheet required.
+[`docs/playground.html`](docs/playground.html) is a self-contained browser preview: open it locally (it loads `spdl-parser.js` from the repo root) and it renders a stream live as you type — no spreadsheet required.
+
+It is also published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main` that touches the playground or the parser. To turn it on, set **Settings → Pages → Source** to **GitHub Actions**; the deployed page is at `/docs/playground.html`.
 
 ## Examples
 Ready-to-run streams live in [`examples/`](examples/) (`hello-world.spdl`, `shapes-and-strokes.spdl`, `invoice.spdl` — which exercises the 1.1 additions — and the fuller `example.spdl` used by the Airtable config). Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`, or point the Airtable renderer's `streamPath` at one of the files.
