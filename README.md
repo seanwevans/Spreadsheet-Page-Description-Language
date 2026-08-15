@@ -7,6 +7,7 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 ![Renderers](https://img.shields.io/badge/Renderers-Sheets%20%7C%20Excel%20%7C%20VBA%20%7C%20Numbers%20%7C%20Airtable-green)
 
 ## Table of Contents
+- [Install](#install)
 - [Overview](#overview)
 - [How It Works](#how-it-works)
 - [Setup by Renderer](#setup-by-renderer)
@@ -19,11 +20,21 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 - [Airtable Renderer (API-backed)](#airtable-renderer-api-backed)
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
+- [Command Line](#command-line)
+- [Markdown to SPDL](#markdown-to-spdl)
 - [Conformance Suite](#conformance-suite)
 - [Linting a Stream](#linting-a-stream)
 - [Development](#development)
 - [Examples](#examples)
 - [Tips and Limitations](#tips-and-limitations)
+
+## Install
+```bash
+npm install spdl-parser      # library + `spdl` and `md2spdl` commands
+npx spdl render stream.spdl -o stream.svg
+```
+
+Or clone the repository and use the renderers directly — they are single files you paste into Apps Script, Office Scripts, VBA or Script Editor.
 
 ## Overview
 - **Content Sheet (`01_Hex_Stream`)**: Contains a linear command stream, one instruction per row starting at row 2, column A.
@@ -218,6 +229,38 @@ Definitions expand before the stream is interpreted, so they carry no state of t
 - `(opt1,opt2,...) /Dropdown` — Merged dropdown list across six columns with a yellow background and border.
 - `(note) /Note` — Adds a cell note at the cursor.
 
+## Command Line
+`bin/spdl.js` renders a stream to a picture, so you can look at SPDL output without a Google account, an Excel licence or an Airtable base:
+
+```bash
+node bin/spdl.js render examples/example.spdl -o example.svg
+node bin/spdl.js render examples/example.spdl --format html > example.html
+node bin/spdl.js render - --format json < stream.spdl   # the parsed document
+node bin/spdl.js lint examples/*.spdl
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-o, --output <file>` | Write to a file (default: stdout) |
+| `-f, --format <fmt>` | `svg`, `html` or `json` (default: inferred from `-o`, else `svg`) |
+| `--cell-size <px>` | Cell size in pixels (default: 25) |
+| `--title <text>` | Title for the HTML page |
+
+The SVG exporter (`spdl-svg.js`) is a *view* of the reference parser's output rather than a sixth renderer: it draws the same cell operations the spreadsheet renderers apply. Text keeps its color, size, weight, style, underline, rotation and alignment; links become `<a>` elements; notes become tooltips; a stroked rectangle comes out as one outline, the way a spreadsheet draws a range border. Images are outlined rather than fetched — the exporter makes no network requests.
+
+`npm run render:examples` writes [`docs/examples/*.svg`](docs/examples/), which are committed so a semantics change shows up in review as a picture of what moved.
+
+## Markdown to SPDL
+`tools/md2spdl.js` compiles a subset of Markdown into a stream, so you do not have to start by learning the command set:
+
+```bash
+node tools/md2spdl.js notes.md -o notes.spdl
+node tools/md2spdl.js notes.md | node bin/spdl.js render - -o notes.svg
+```
+
+Headings become bold text at decreasing sizes, paragraphs are word-wrapped to the page width, bullet and numbered lists get their marker in its own column, task list items become real checkboxes, `---` becomes a rule, links become `/Link`, and images become `/InsertImage`. Content that runs past the page height starts a `/NewPage`. Inline emphasis is dropped: SPDL styles a whole cell, so mid-string bold has nowhere to go. Options: `--width`, `--height`, `--margin`, `-o`.
+
+The output is plain SPDL 1.0 and passes `spdl-lint`, so it renders on every renderer here.
 ## Conformance Suite
 SPDL's promise is that a stream renders the same everywhere. `npm test` enforces it:
 
