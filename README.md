@@ -19,6 +19,7 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 - [Airtable Renderer (API-backed)](#airtable-renderer-api-backed)
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
+- [Conformance Suite](#conformance-suite)
 - [Examples](#examples)
 - [Tips and Limitations](#tips-and-limitations)
 
@@ -198,6 +199,18 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `/CheckBox` — Inserts a centered checkbox at the current cell.
 - `(opt1,opt2,...) /Dropdown` — Merged dropdown list across six columns with a yellow background and border.
 - `(note) /Note` — Adds a cell note at the cursor.
+
+## Conformance Suite
+SPDL's promise is that a stream renders the same everywhere. `npm test` enforces it:
+
+- **`tests/conformance.test.js`** runs the Apps Script and Office Scripts renderers over a shared fixture set (`tests/conformance/fixtures.js`) plus every bundled example, and checks each against the reference parser *and* against each other. Renderers are compared through a platform-neutral cell model (`tests/helpers/canonical.js`) so Excel's `☐` placeholder, Sheets' checkbox control, and Airtable's `Checkbox` field can be held to the same standard. A renderer may do more than the reference can express; it may never contradict it.
+- **`tests/conformance.property.test.js`** does the same over randomly generated valid streams (seeded — set `SPDL_CONFORMANCE_SEED` / `SPDL_CONFORMANCE_ITERATIONS` to explore).
+- **`tests/pattern-parity.test.js`** reads the command-pattern tables back out of all four renderer sources — including the VBA one, which cannot be executed here — and checks they classify the same commands the same way and extract operands into the same capture groups.
+- **`npm run typecheck`** type-checks `spdlrender.office.ts` against `types/excelscript.d.ts`.
+
+The Office Scripts harness needs TypeScript stripped from the source: it uses Node's built-in `module.stripTypeScriptTypes` (Node 22.13+) and falls back to the optional `typescript` devDependency, skipping those tests with an explanatory message if neither is available. Run `npm install` to be sure they execute.
+
+When a bug turns out to be two renderers disagreeing, add a fixture — that is what stops it from coming back.
 
 ## Linting a Stream
 `node spdl-lint.js stream.spdl` (or pipe via stdin) validates a stream against the grammar in [SPEC.md](SPEC.md): unrecognized lines — which renderers silently skip — are errors, and commands that parse but render as no-ops (`/NewPage` before `MediaBox`, short pixel-art payloads, out-of-range colors) are warnings. Exits non-zero on errors, so it can gate CI or a pre-commit hook. `npm run lint:examples` checks the bundled examples.

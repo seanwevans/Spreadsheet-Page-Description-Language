@@ -9,7 +9,11 @@
   },
   "scripts": {
     "test": "node --test",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "golden:update": "node scripts/update-golden.js",
     "lint:examples": "node spdl-lint.js examples/*.spdl"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
   }
 }

@@ -122,6 +122,14 @@
     const records = [];
     const pages = [];
 
+    // `recordIndex` is how many cell operations preceded the page draw, so a
+    // consumer can interleave page chrome with content instead of assuming
+    // all pages are drawn first: content written before a /NewPage is painted
+    // over by that page, exactly as it is in the spreadsheet renderers.
+    const pushPage = (top, width, height) => {
+      pages.push({ top, width, height, recordIndex: records.length });
+    };
+
     // Fields set to undefined are omitted entirely so the operation list is
     // stable under JSON round-trips (golden files) and never sends explicit
     // undefined values to consumers.
@@ -187,9 +195,11 @@
 
       // CHECKBOX
       if (command === "/CheckBox") {
+        // A checkbox is centered chrome, not styled text: the active
+        // alignment does not apply to it in any renderer.
         enqueueCell(state.cursorX, state.cursorY, {
           Checkbox: true,
-          Alignment: state.alignment || "VMiddle",
+          Alignment: "VMiddle",
         });
         continue;
       }
@@ -212,7 +222,7 @@
         state.pageHeight = parseInt(match[2], 10) || 0;
         state.pageTop = state.cursorY;
         if (state.pageWidth > 0 && state.pageHeight > 0) {
-          pages.push({ top: state.pageTop, width: state.pageWidth, height: state.pageHeight });
+          pushPage(state.pageTop, state.pageWidth, state.pageHeight);
         }
         continue;
       }
@@ -221,7 +231,7 @@
           state.pageTop += state.pageHeight + 2;
           state.cursorX = 1;
           state.cursorY = state.pageTop;
-          pages.push({ top: state.pageTop, width: state.pageWidth, height: state.pageHeight });
+          pushPage(state.pageTop, state.pageWidth, state.pageHeight);
         }
         continue;
       }
@@ -234,9 +244,12 @@
 
       // SHAPES
       if ((match = command.match(patterns.rectangle))) {
+        // The path's position is page-relative at *definition* time: a
+        // /NewPage between `re` and `f` must not move the shape. The other
+        // renderers resolve pageTop here too.
         state.currentPath = {
           x: parseInt(match[1], 10),
-          y: parseInt(match[2], 10),
+          y: state.pageTop + parseInt(match[2], 10),
           w: parseInt(match[3], 10),
           h: parseInt(match[4], 10),
         };
@@ -245,7 +258,7 @@
       if (command === "f" || command === "S") {
         const path = state.currentPath;
         if (path && path.w > 0 && path.h > 0 && path.w * path.h <= MAX_SHAPE_CELLS) {
-          const baseY = state.pageTop + path.y;
+          const baseY = path.y;
           for (let row = 0; row < path.h; row += 1) {
             for (let col = 0; col < path.w; col += 1) {
               // Strokes only touch the rectangle's perimeter, matching the
