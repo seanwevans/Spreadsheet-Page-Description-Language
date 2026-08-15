@@ -13,13 +13,26 @@ const PIXEL_ART_PATTERN = /^(\d+)\s+(\d+)\s+ID\s+(\S+)$/;
 const ALIGN_COMMAND_PATTERN = /^\/Align\s+(\S+)$/;
 const FILL_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$/;
 const STROKE_COLOR_PATTERN = /^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$/;
-const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d+(?:\.\d+)?))?\s+Tf$/;
+const FONT_COMMAND_PATTERN = /^\/F(\d+)(?:\s+(\d*\.?\d+))?\s+Tf$/;
 const UNDERLINE_PATTERN = /^([01])\s+Tr$/;
 const FONT_SIZE_PATTERN = /^([+-]?\d*\.?\d+)\s+Ts$/;
 const ALIGN_CODE_PATTERN = /^(\d+)\s+TA$/;
 const TD_PATTERN = /^([+-]?\d*\.?\d+)\s+([+-]?\d*\.?\d+)\s+Td$/;
 const MOVE_TO_PATTERN = /^\/MoveTo\s+(-?\d+)\s+(-?\d+)$/;
+const LINE_COMMAND_PATTERN = /^(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+l$/;
+const TEXT_BOX_PATTERN = /^(\d+)\s+(\d+)\s+\(((?:[^)\\]|\\.)*)\)\s+\/TextBox$/;
+const COL_WIDTH_PATTERN = /^(\d+)\s+\/ColWidth$/;
+const ROW_HEIGHT_PATTERN = /^(\d+)\s+\/RowHeight$/;
+const DEF_BEGIN_PATTERN = /^\/Def\s+([A-Za-z][A-Za-z0-9_-]*)$/;
+const DEF_USE_PATTERN = /^\/Do\s+([A-Za-z][A-Za-z0-9_-]*)$/;
 const ROTATE_TOKEN = "/Rotate";
+
+// How many characters of 15pt text fit in a default 25px cell; /TextBox wraps
+// against width * CHARS_PER_CELL.
+const CHARS_PER_CELL = 4;
+
+// Guards against a definition that invokes itself, directly or indirectly.
+const MAX_DEF_DEPTH = 8;
 
 function renderPDF() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -27,7 +40,11 @@ function renderPDF() {
   const renderSheet = ss.getSheetByName("02_Rendered_View");
 
   const lastRow = sourceSheet.getLastRow();
-  const data = lastRow >= 2 ? sourceSheet.getRange(2, 1, lastRow - 1).getValues() : [];
+  const rawData = lastRow >= 2 ? sourceSheet.getRange(2, 1, lastRow - 1).getValues() : [];
+  // /Def blocks are collected and replayed before drawing, so the main loop
+  // only ever sees drawing commands.
+  const data = expandDefinitions(rawData.map((row) => row[0].toString().trim()))
+    .map((command) => [command]);
   if (data.length === 0) {
     Logger.log("renderPDF exiting: no stream data rows detected (lastRow=%s)", lastRow);
   }
@@ -80,6 +97,7 @@ function renderPDF() {
   const vAligns = makeGrid(defaultVerticalAlignment);
   const notes = makeGrid("");
   const deferredOps = [];
+  const stateStack = [];
 
   const writeText = (x, y, text) => {
     values[y - 1][x - 1] = text;
@@ -149,14 +167,33 @@ function renderPDF() {
         continue;
       }
 
+      // --- TEXT BOX --- (wrapped text, one wrapped line per row of the box)
+      if ((match = command.match(TEXT_BOX_PATTERN))) {
+        const boxWidth = parseInt(match[1]);
+        const boxHeight = parseInt(match[2]);
+        if (boxWidth > 0 && boxHeight > 0) {
+          const wrapped = wrapText(unescapeTextOperand(match[3]), boxWidth);
+          const lineCount = Math.min(wrapped.length, boxHeight);
+          for (let line = 0; line < lineCount; line++) {
+            if (isInsideCanvas(currentX, currentY + line, maxRows, maxCols)) {
+              writeText(currentX, currentY + line, wrapped[line]);
+            }
+          }
+          if (wrapped.length > boxHeight) {
+            Logger.log(`/TextBox dropped ${wrapped.length - boxHeight} line(s) that did not fit: ${command}`);
+          }
+        }
+        continue;
+      }
+
       // --- LINKS ---
       if ((match = command.match(LINK_COMMAND_PATTERN))) {
         let url = unescapeTextOperand(match[1]);
         let label = unescapeTextOperand(match[2]);
         if (isInsideCanvas(currentX, currentY, maxRows, maxCols)) {
+          // A link renders with the active text styling (SPEC.md), the same
+          // as the Office Scripts renderer — underline and rotation included.
           writeText(currentX, currentY, `=HYPERLINK("${escapeFormulaString(url)}", "${escapeFormulaString(label)}")`);
-          fontLines[currentY - 1][currentX - 1] = "none";
-          rotations[currentY - 1][currentX - 1] = 0;
         } else {
           Logger.log(`Skipping link outside canvas at (${currentX}, ${currentY}): ${command}`);
         }
@@ -210,12 +247,16 @@ function renderPDF() {
           vAligns[currentY - 1][currentX - 1] = "middle";
           const dropX = currentX;
           const dropY = currentY;
+          // The dropdown's frame uses the active stroke state, the same as
+          // the Office Scripts and VBA renderers.
+          const dropStrokeColor = currentStrokeColor;
+          const dropStrokeStyle = currentLineWidth;
           deferredOps.push(() => {
             let rule = SpreadsheetApp.newDataValidation().requireValueInList(options, true).build();
             renderSheet.getRange(dropY, dropX, 1, dropdownWidth)
               .merge()
               .setDataValidation(rule)
-              .setBorder(true, true, true, true, false, false, "black", SpreadsheetApp.BorderStyle.SOLID);
+              .setBorder(true, true, true, true, false, false, dropStrokeColor, dropStrokeStyle);
           });
         }
         continue;
@@ -245,6 +286,98 @@ function renderPDF() {
           currentX = 1;
           currentY = pageTopRow;
           drawPageIntoGrids(pageTopRow, pageWidth, pageHeight, currentLineWidth);
+        }
+        continue;
+      }
+
+      // --- GRAPHICS STATE STACK ---
+      if (isExactOperator(command, "q")) {
+        stateStack.push({
+          currentX: currentX,
+          currentY: currentY,
+          currentFillColor: currentFillColor,
+          currentStrokeColor: currentStrokeColor,
+          isBold: isBold,
+          isItalic: isItalic,
+          lineStyle: lineStyle,
+          currentLineWidth: currentLineWidth,
+          currentRotation: currentRotation,
+          currentFontSize: currentFontSize,
+          currentHorizontalAlignment: currentHorizontalAlignment,
+          currentVerticalAlignment: currentVerticalAlignment,
+          currentPath: {x: currentPath.x, y: currentPath.y, w: currentPath.w, h: currentPath.h},
+        });
+        continue;
+      }
+      if (isExactOperator(command, "Q")) {
+        const saved = stateStack.pop();
+        if (!saved) {
+          Logger.log("Q without a matching q; nothing to restore.");
+        } else {
+          currentX = saved.currentX;
+          currentY = saved.currentY;
+          currentFillColor = saved.currentFillColor;
+          currentStrokeColor = saved.currentStrokeColor;
+          isBold = saved.isBold;
+          isItalic = saved.isItalic;
+          lineStyle = saved.lineStyle;
+          currentLineWidth = saved.currentLineWidth;
+          currentRotation = saved.currentRotation;
+          currentFontSize = saved.currentFontSize;
+          currentHorizontalAlignment = saved.currentHorizontalAlignment;
+          currentVerticalAlignment = saved.currentVerticalAlignment;
+          currentPath = saved.currentPath;
+        }
+        continue;
+      }
+
+      // --- SHEET GEOMETRY ---
+      if ((match = command.match(COL_WIDTH_PATTERN))) {
+        const width = parseInt(match[1]);
+        const targetColumn = currentX;
+        if (targetColumn >= 1 && targetColumn <= maxCols) {
+          deferredOps.push(() => {
+            renderSheet.setColumnWidth(targetColumn, width);
+          });
+        }
+        continue;
+      }
+      if ((match = command.match(ROW_HEIGHT_PATTERN))) {
+        const height = parseInt(match[1]);
+        const targetRow = currentY;
+        if (targetRow >= 1 && targetRow <= maxRows) {
+          deferredOps.push(() => {
+            renderSheet.setRowHeight(targetRow, height);
+          });
+        }
+        continue;
+      }
+
+      // --- LINES --- (an axis-aligned run of cells, stroked like a
+      // degenerate rectangle; diagonals have no cell-grid representation)
+      if ((match = command.match(LINE_COMMAND_PATTERN))) {
+        const x1 = Math.floor(parseFloat(match[1]));
+        const y1 = Math.floor(parseFloat(match[2]));
+        const x2 = Math.floor(parseFloat(match[3]));
+        const y2 = Math.floor(parseFloat(match[4]));
+        if (x1 !== x2 && y1 !== y2) {
+          Logger.log(`Skipping diagonal line (only horizontal and vertical are supported): ${command}`);
+          continue;
+        }
+        const left = Math.min(x1, x2);
+        const top = pageTopRow + Math.min(y1, y2);
+        const width = Math.abs(x2 - x1) + 1;
+        const height = Math.abs(y2 - y1) + 1;
+        const clamped = clampRect(left, top, width, height, maxRows, maxCols);
+        if (clamped) {
+          const strokeColor = currentStrokeColor;
+          const strokeStyle = currentLineWidth;
+          deferredOps.push(() => {
+            renderSheet.getRange(clamped.y, clamped.x, clamped.h, clamped.w)
+              .setBorder(true, true, true, true, false, false, strokeColor, strokeStyle);
+          });
+        } else {
+          Logger.log(`Skipping line entirely outside canvas: ${command}`);
         }
         continue;
       }
@@ -341,6 +474,10 @@ function renderPDF() {
       if ((match = command.match(FONT_COMMAND_PATTERN))) {
         isBold = match[1] === "2" ? "bold" : "normal";
         isItalic = match[1] === "3" ? "italic" : "normal";
+        if (match[2] !== undefined) {
+          const parsedTfSize = parseFloat(match[2]);
+          currentFontSize = parsedTfSize > 0 ? parsedTfSize : defaultFontSize;
+        }
         continue;
       }
       if ((match = command.match(UNDERLINE_PATTERN))) {
@@ -423,6 +560,84 @@ function isExactOperator(command, operator) {
   return command === operator;
 }
 
+// Greedy word wrap into lines of at most `columns * CHARS_PER_CELL`
+// characters. A word longer than a line gets a line of its own rather than
+// being split, matching how a spreadsheet overflows one long string.
+function wrapText(text, columns) {
+  const limit = Math.max(1, columns * CHARS_PER_CELL);
+  const lines = [];
+  let current = "";
+
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    if (current.length === 0) {
+      current = word;
+    } else if (current.length + 1 + word.length <= limit) {
+      current += " " + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current.length > 0) lines.push(current);
+  return lines;
+}
+
+// Collects `/Def name … /EndDef` blocks and replays them wherever `/Do name`
+// appears, so the render loop only sees drawing commands. Unknown names and
+// recursive definitions are dropped, like any other command a renderer
+// cannot interpret.
+function expandDefinitions(lines) {
+  const definitions = {};
+  const expanded = [];
+  let capturing = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const beginMatch = line.match(DEF_BEGIN_PATTERN);
+    if (beginMatch) {
+      capturing = beginMatch[1];
+      definitions[capturing] = [];
+      continue;
+    }
+    if (isExactOperator(line, "/EndDef")) {
+      capturing = null;
+      continue;
+    }
+    if (capturing) {
+      definitions[capturing].push(line);
+      continue;
+    }
+    expanded.push(line);
+  }
+
+  const replay = (lineList, depth, active) => {
+    const out = [];
+    for (let i = 0; i < lineList.length; i++) {
+      const line = lineList[i];
+      const useMatch = line.match(DEF_USE_PATTERN);
+      if (!useMatch) {
+        out.push(line);
+        continue;
+      }
+      const name = useMatch[1];
+      const body = definitions[name];
+      if (!body || depth >= MAX_DEF_DEPTH || active[name]) {
+        Logger.log(`Skipping ${line}: unknown or recursive definition.`);
+        continue;
+      }
+      active[name] = true;
+      const replayed = replay(body, depth + 1, active);
+      for (let k = 0; k < replayed.length; k++) out.push(replayed[k]);
+      delete active[name];
+    }
+    return out;
+  };
+
+  return replay(expanded, 0, {});
+}
+
 function isInsideCanvas(x, y, maxRows, maxCols) {
   return x >= 1 && x <= maxCols && y >= 1 && y <= maxRows;
 }
@@ -460,7 +675,9 @@ function parseRectangleCommand(command) {
 
 function rgbToHex(r, g, b) {
   const clamp = (value) => {
-    const n = Math.floor(Number(value));
+    // Components are scaled by 255 and rounded to nearest (SPEC.md), so
+    // "0.5 0.5 0.5 rg" is #808080 in every renderer.
+    const n = Math.round(Number(value));
     if (isNaN(n)) return 0;
     return Math.max(0, Math.min(255, n));
   };

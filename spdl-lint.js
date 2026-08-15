@@ -15,16 +15,33 @@
  * Exits 1 when any error is found.
  */
 
-const { patterns, operators } = require("./spdl-parser.js");
+const { patterns, operators, wrapText, unescapeTextOperand } = require("./spdl-parser.js");
 
 const ALIGN_DIRECTIVES = new Set(["HLeft", "HCenter", "HRight", "VTop", "VMiddle", "VBottom"]);
+
+// Collects every definition name in the stream so a /Do can be checked even
+// when it appears before the /Def (which the parser also allows, since
+// definitions are gathered in a pass of their own).
+function collectDefinitionNames(lines) {
+  const names = new Set();
+  for (const line of lines) {
+    const match = line.trim().match(patterns.def);
+    if (match) names.add(match[1]);
+  }
+  return names;
+}
 
 function lint(stream) {
   const errors = [];
   const warnings = [];
   let mediaBoxValid = false;
+  let saveDepth = 0;
+  let openDefinition = null;
+  let openDefinitionLine = 0;
 
   const lines = stream.split(/\r?\n/);
+  const definitionNames = collectDefinitionNames(lines);
+
   for (let i = 0; i < lines.length; i += 1) {
     const lineNumber = i + 1;
     const command = lines[i].trim();
@@ -34,6 +51,65 @@ function lint(stream) {
     const report = (list, message) => list.push({ line: lineNumber, command, message });
 
     let match;
+
+    if ((match = command.match(patterns.def))) {
+      if (openDefinition) {
+        report(warnings, `/Def ${match[1]} starts before /Def ${openDefinition} is closed; the earlier definition ends here`);
+      }
+      openDefinition = match[1];
+      openDefinitionLine = lineNumber;
+      continue;
+    }
+    if (command === "/EndDef") {
+      if (!openDefinition) {
+        report(warnings, "/EndDef without a matching /Def is ignored");
+      }
+      openDefinition = null;
+      continue;
+    }
+    if ((match = command.match(patterns.doDef))) {
+      if (!definitionNames.has(match[1])) {
+        report(warnings, `/Do ${match[1]} has no matching /Def; the command is skipped`);
+      } else if (openDefinition === match[1]) {
+        report(warnings, `/Do ${match[1]} inside its own definition recurses; the inner call is skipped`);
+      }
+      continue;
+    }
+
+    if (command === "q") {
+      saveDepth += 1;
+      continue;
+    }
+    if (command === "Q") {
+      if (saveDepth === 0) {
+        report(warnings, "Q without a matching q restores nothing");
+      } else {
+        saveDepth -= 1;
+      }
+      continue;
+    }
+
+    if ((match = command.match(patterns.line))) {
+      const [x1, y1, x2, y2] = match.slice(1, 5).map((v) => Math.floor(parseFloat(v)));
+      if (x1 !== x2 && y1 !== y2) {
+        report(warnings, "lines must be horizontal or vertical; a diagonal l is skipped");
+      }
+      continue;
+    }
+
+    if ((match = command.match(patterns.textBox))) {
+      const width = parseInt(match[1], 10);
+      const height = parseInt(match[2], 10);
+      if (width <= 0 || height <= 0) {
+        report(warnings, "/TextBox needs a positive width and height; the block is skipped");
+      } else {
+        const needed = wrapText(unescapeTextOperand(match[3]), width).length;
+        if (needed > height) {
+          report(warnings, `/TextBox text wraps to ${needed} lines but the box is ${height} tall; the overflow is dropped`);
+        }
+      }
+      continue;
+    }
     if ((match = command.match(patterns.mediaBox))) {
       const w = parseInt(match[1], 10);
       const h = parseInt(match[2], 10);
@@ -100,6 +176,21 @@ function lint(stream) {
     }
   }
 
+  if (openDefinition) {
+    warnings.push({
+      line: openDefinitionLine,
+      command: `/Def ${openDefinition}`,
+      message: "definition is never closed with /EndDef; every command after it is captured instead of drawn",
+    });
+  }
+  if (saveDepth > 0) {
+    warnings.push({
+      line: lines.length,
+      command: "q",
+      message: `${saveDepth} q without a matching Q; the saved state is never restored`,
+    });
+  }
+
   return { errors, warnings };
 }
 
@@ -114,31 +205,117 @@ function formatFindings(name, findings) {
   return lines;
 }
 
-function main() {
-  const fs = require("fs");
-  const files = process.argv.slice(2);
+const USAGE = `Usage: spdl-lint [options] [file ...]
+
+Validates SPDL streams against the grammar in SPEC.md. With no files, reads
+the stream from stdin.
+
+Options:
+  --json               report findings as JSON instead of text
+  --max-warnings <n>   fail when more than n warnings are found
+  --quiet              report errors only (warnings are still counted)
+  -h, --help           show this message
+
+Exits 1 when any error is found, or when --max-warnings is exceeded.`;
+
+// Parses argv into { files, json, quiet, maxWarnings }. Unknown options are
+// an error rather than being treated as filenames.
+function parseArgs(argv) {
+  const options = { files: [], json: false, quiet: false, maxWarnings: Infinity, help: false };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") {
+      options.help = true;
+    } else if (arg === "--json") {
+      options.json = true;
+    } else if (arg === "--quiet") {
+      options.quiet = true;
+    } else if (arg === "--max-warnings" || arg.startsWith("--max-warnings=")) {
+      const raw = arg.startsWith("--max-warnings=")
+        ? arg.slice("--max-warnings=".length)
+        : argv[++i];
+      const parsed = Number(raw);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(`--max-warnings expects a non-negative integer, got "${raw === undefined ? "" : raw}"`);
+      }
+      options.maxWarnings = parsed;
+    } else if (arg.startsWith("-")) {
+      throw new Error(`unknown option "${arg}"`);
+    } else {
+      options.files.push(arg);
+    }
+  }
+
+  return options;
+}
+
+function lintInputs(inputs, options) {
+  const results = [];
   let errorCount = 0;
   let warningCount = 0;
-
-  const inputs = files.length > 0
-    ? files.map((file) => ({ name: file, stream: fs.readFileSync(file, "utf8") }))
-    : [{ name: "<stdin>", stream: fs.readFileSync(0, "utf8") }];
 
   for (const { name, stream } of inputs) {
     const findings = lint(stream);
     errorCount += findings.errors.length;
     warningCount += findings.warnings.length;
-    for (const line of formatFindings(name, findings)) {
-      console.log(line);
+    results.push({ file: name, errors: findings.errors, warnings: findings.warnings });
+  }
+
+  const overWarningLimit = warningCount > options.maxWarnings;
+  return {
+    results,
+    errorCount,
+    warningCount,
+    maxWarnings: options.maxWarnings === Infinity ? null : options.maxWarnings,
+    ok: errorCount === 0 && !overWarningLimit,
+  };
+}
+
+function main(argv = process.argv.slice(2), out = console) {
+  const fs = require("fs");
+
+  let options;
+  try {
+    options = parseArgs(argv);
+  } catch (error) {
+    out.error(`spdl-lint: ${error.message}\n\n${USAGE}`);
+    return 2;
+  }
+
+  if (options.help) {
+    out.log(USAGE);
+    return 0;
+  }
+
+  const inputs = options.files.length > 0
+    ? options.files.map((file) => ({ name: file, stream: fs.readFileSync(file, "utf8") }))
+    : [{ name: "<stdin>", stream: fs.readFileSync(0, "utf8") }];
+
+  const report = lintInputs(inputs, options);
+
+  if (options.json) {
+    out.log(JSON.stringify(report, null, 2));
+  } else {
+    for (const result of report.results) {
+      const findings = options.quiet
+        ? { errors: result.errors, warnings: [] }
+        : result;
+      for (const line of formatFindings(result.file, findings)) {
+        out.log(line);
+      }
+    }
+    out.log(`${report.errorCount} error(s), ${report.warningCount} warning(s)`);
+    if (report.maxWarnings !== null && report.warningCount > report.maxWarnings) {
+      out.log(`exceeded --max-warnings ${report.maxWarnings}`);
     }
   }
 
-  console.log(`${errorCount} error(s), ${warningCount} warning(s)`);
-  process.exit(errorCount > 0 ? 1 : 0);
+  return report.ok ? 0 : 1;
 }
 
 if (require.main === module) {
-  main();
+  process.exit(main());
 }
 
-module.exports = { lint };
+module.exports = { lint, lintInputs, parseArgs, main, USAGE };
