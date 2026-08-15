@@ -15,5 +15,11 @@
   },
   "devDependencies": {
     "typescript": "^5.9.0"
+    "lint": "eslint . spdlrender.gs",
+    "lint:examples": "node spdl-lint.js --max-warnings 0 examples/*.spdl",
+    "golden:update": "node scripts/update-golden.js",
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "globals": "^16.0.0"
   }
 }

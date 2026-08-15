@@ -71,7 +71,7 @@ Renderers maintain the following state, with these defaults:
 | --- | --- |
 | `<uint:W> <uint:H> MediaBox` | Define the page size in cells and draw the page (white background, black border) at the current page top. Both dimensions must be > 0; otherwise the command is invalid, the renderer logs it, and `/NewPage` is disabled until a valid MediaBox appears. |
 | `/NewPage` | Start a new page below the previous one, separated by 2 rows. Requires a valid MediaBox; otherwise logged and skipped. Resets the cursor to the new page's top-left. |
-| `/MoveTo <int:X> <int:Y>` | Move the cursor to an absolute position **relative to the current page's top-left** (1-based). X is clamped to [1, pageWidth] (canvas width when no page is defined); Y is clamped to the page's rows (canvas height when no page is defined). |
+| `/MoveTo <int:X> <int:Y>` | Move the cursor to an absolute position **relative to the current page's top-left** (1-based). X is clamped to [1, pageWidth], or to the canvas width when no page is defined; Y is clamped to the page's rows, or to the canvas height when no page is defined. |
 | `<num:dx> <num:dy> Td` | Move the cursor relatively by tenths of a cell. Deltas are divided by 10 and **truncated toward zero**: `15 → +1`, `-15 → -1`, `5 → 0`. |
 
 ### Text and typography
@@ -104,8 +104,14 @@ Renderers maintain the following state, with these defaults:
 | `S` | Stroke the current path's **perimeter** with the stroke color and width. |
 
 Rectangles that extend past the canvas are clamped to it; rectangles entirely
-outside the canvas are skipped with a log message. A single `f`/`S` may touch
-at most 100,000 cells — larger shapes are skipped as malformed input.
+outside the canvas are skipped with a log message. `S` strokes the perimeter
+of the **clamped** rectangle, so an edge that falls outside the canvas is not
+drawn back at the canvas boundary by a separate rule — it is simply the
+clamped rectangle's border. A single `f`/`S` may touch at most 100,000 cells
+**after clamping** — larger shapes are skipped as malformed input. On a
+bounded canvas (all spreadsheet renderers) clamping alone keeps every shape
+under that limit; the cap only bites for consumers that parse with an
+unbounded canvas.
 
 ### Images
 
@@ -132,7 +138,10 @@ them.
   command, log the failure, and continue.
 - All drawing is clamped to the canvas (default 1000 rows × 26 columns for
   the spreadsheet renderers); single-cell writes with an off-canvas cursor
-  are skipped with a log message.
+  are skipped with a log message. The reference parser applies the same
+  default bounds and accepts `parseSpdl(stream, { canvas: { rows, cols } })`
+  to match a renderer with a differently sized sheet, or `{ canvas: null }`
+  to parse without bounds.
 
 ## Renderer feature support
 

@@ -16,13 +16,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      # The renderers and tests have no runtime dependencies; TypeScript is
-      # installed so the Office Scripts harness runs on every Node version in
-      # the matrix rather than only the ones with built-in type stripping.
       - run: npm install --no-audit --no-fund
       - run: npm test
 
   typecheck:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,3 +29,5 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm run lint:examples
+      - run: npm run lint
