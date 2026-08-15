@@ -17,3 +17,16 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      # The bundled examples are part of the documentation: a stream that no
+      # longer lints is a broken example, and nothing else would catch it.
+      - run: npm run lint:examples
+      - run: npm run lint

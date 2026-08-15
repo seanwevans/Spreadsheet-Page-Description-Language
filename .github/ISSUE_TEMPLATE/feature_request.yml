@@ -1,0 +1,41 @@
+name: Feature request
+description: A new command, or a change to what an existing one means
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        SPDL commands have to work across five very different platforms, so
+        the interesting question is usually not "can this be drawn" but "can
+        every renderer express it, and what should the ones that cannot do?"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to build?
+      description: The document or layout you cannot express today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed syntax
+      description: How the command would look in a stream, with operands.
+      render: text
+      placeholder: "10 4 (Some text) /TextBox"
+
+  - type: textarea
+    id: platforms
+    attributes:
+      label: Platform support
+      description: >
+        Which renderers could implement this, and what should the others do?
+        A platform that cannot express a feature logs and skips it.
+
+  - type: checkboxes
+    id: alternatives
+    attributes:
+      label: Alternatives
+      options:
+        - label: This cannot be expressed by combining existing commands

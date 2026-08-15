@@ -19,6 +19,8 @@ SPDL is a lightweight, interpreted markup language for building high-fidelity, i
 - [Airtable Renderer (API-backed)](#airtable-renderer-api-backed)
 - [Rendering a Document](#rendering-a-document)
 - [Command Reference](#command-reference)
+- [Linting a Stream](#linting-a-stream)
+- [Development](#development)
 - [Examples](#examples)
 - [Tips and Limitations](#tips-and-limitations)
 
@@ -200,10 +202,33 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `(note) /Note` — Adds a cell note at the cursor.
 
 ## Linting a Stream
-`node spdl-lint.js stream.spdl` (or pipe via stdin) validates a stream against the grammar in [SPEC.md](SPEC.md): unrecognized lines — which renderers silently skip — are errors, and commands that parse but render as no-ops (`/NewPage` before `MediaBox`, short pixel-art payloads, out-of-range colors) are warnings. Exits non-zero on errors, so it can gate CI or a pre-commit hook. `npm run lint:examples` checks the bundled examples.
+`node spdl-lint.js stream.spdl` (or pipe via stdin) validates a stream against the grammar in [SPEC.md](SPEC.md): unrecognized lines — which renderers silently skip — are errors, and commands that parse but render as no-ops (`/NewPage` before `MediaBox`, short pixel-art payloads, out-of-range colors) are warnings. Exits non-zero on errors, so it can gate CI or a pre-commit hook.
+
+```
+Usage: spdl-lint [options] [file ...]
+
+  --json               report findings as JSON instead of text
+  --max-warnings <n>   fail when more than n warnings are found
+  --quiet              report errors only (warnings are still counted)
+  -h, --help           show this message
+```
+
+`--json` emits `{ results: [{ file, errors, warnings }], errorCount, warningCount, maxWarnings, ok }` for editors and CI annotations. `npm run lint:examples` checks the bundled examples with `--max-warnings 0`.
+
+## Development
+| Command | What it runs |
+| --- | --- |
+| `npm test` | The full test suite (`node --test`) |
+| `npm run lint` | ESLint over the JavaScript and the Apps Script renderer |
+| `npm run lint:examples` | `spdl-lint` over the bundled examples |
+| `npm run golden:update` | Regenerates `tests/golden/*.json` |
+
+CI runs the tests on Node 18/20/22 and the two lint steps on every pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to change the language without letting the renderers drift apart.
 
 ## Playground
-[`docs/playground.html`](docs/playground.html) is a self-contained browser preview: open it locally (it loads `spdl-parser.js` from the repo root) or enable GitHub Pages for the repository root and share the hosted URL. It renders a stream live as you type — no spreadsheet required.
+[`docs/playground.html`](docs/playground.html) is a self-contained browser preview: open it locally (it loads `spdl-parser.js` from the repo root) and it renders a stream live as you type — no spreadsheet required.
+
+It is also published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main` that touches the playground or the parser. To turn it on, set **Settings → Pages → Source** to **GitHub Actions**; the deployed page is at `/docs/playground.html`.
 
 ## Examples
 Ready-to-run streams live in [`examples/`](examples/) (`hello-world.spdl`, `shapes-and-strokes.spdl`, and the fuller `example.spdl` used by the Airtable config). Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`, or point the Airtable renderer's `streamPath` at one of the files.
