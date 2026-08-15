@@ -10,9 +10,19 @@ test('parseSpdlDocument reports page regions for MediaBox and /NewPage', () => {
   const { pages } = parseSpdlDocument(stream);
 
   assert.deepEqual(pages, [
-    { top: 1, width: 16, height: 20 },
-    { top: 23, width: 16, height: 20 },
+    { top: 1, width: 16, height: 20, recordIndex: 0 },
+    { top: 23, width: 16, height: 20, recordIndex: 41 },
   ]);
+});
+
+test('page regions record how many cell operations preceded them', () => {
+  // The second page is drawn after the first page's content, and paints over
+  // anything already written in the rows it covers.
+  const { records, pages } = parseSpdlDocument('4 3 MediaBox\n(one) Tj\n(two) /Note\n/NewPage\n(three) Tj');
+
+  assert.equal(pages[0].recordIndex, 0);
+  assert.equal(pages[1].recordIndex, 2);
+  assert.equal(records.length, 3);
 });
 
 test('parseSpdlDocument.records matches parseSpdl output', () => {

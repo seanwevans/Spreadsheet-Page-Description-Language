@@ -451,7 +451,9 @@ function setBorder(
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
-  const toHex = (value: number) => Math.max(0, Math.min(255, Math.floor(value))).toString(16).padStart(2, "0");
+  // Components are scaled by 255 and rounded to nearest (SPEC.md), so
+  // "0.5 0.5 0.5 rg" is #808080 in every renderer.
+  const toHex = (value: number) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0");
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 

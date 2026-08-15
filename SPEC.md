@@ -79,8 +79,8 @@ Renderers maintain the following state, with these defaults:
 | Grammar | Meaning |
 | --- | --- |
 | `(<text>) Tj` | Write `text` at the cursor using the active fill color, font size, weight, style, underline, rotation, and alignment. |
-| `(<url>) (<label>) /Link` | Insert a hyperlink at the cursor with the active text styling. Renderers that build formulas must escape the URL and label so content cannot break out of the formula string. |
-| `/F<uint:n> [<num:size>] Tf` | Select font variant: `n = 2` → bold, `n = 3` → italic, anything else → regular. The optional size operand sets the font size and follows the same rules as `Ts`; omitting it leaves the size unchanged. |
+| `(<url>) (<label>) /Link` | Insert a hyperlink at the cursor with the active text styling — color, size, weight, style, underline, rotation and alignment all apply, exactly as for `Tj`. Renderers that build formulas must escape the URL and label so content cannot break out of the formula string. |
+| `/F<uint:n> [<num:size>] Tf` | Select font variant: `n = 2` → bold, `n = 3` → italic, anything else → regular. The optional size operand sets the font size where supported. |
 | `<num:size> Ts` | Set the font size in points. Non-positive or unparsable sizes reset to the default (15). Decimals are allowed. |
 | `1 Tr` / `0 Tr` | Underline on / off. |
 | `<uint:code> TA` | Alignment shorthand: `0/1/2` → horizontal left/center/right, `3/4/5` → vertical top/middle/bottom, `6+` → reset both to the sheet defaults. |
@@ -91,7 +91,7 @@ Renderers maintain the following state, with these defaults:
 
 | Grammar | Meaning |
 | --- | --- |
-| `<frac:r> <frac:g> <frac:b> rg` | Set the fill color. Components are 0–1, scaled to 0–255 and clamped. |
+| `<frac:r> <frac:g> <frac:b> rg` | Set the fill color. Components are 0–1, scaled by 255, **rounded to nearest**, and clamped to 0–255: `0.5` is `0x80`, not `0x7f`. |
 | `<frac:r> <frac:g> <frac:b> SC` | Set the stroke color, independent of fill. |
 | `<uint:n> w` | Set the stroke width: `1` = thin, `2` = medium, `3` = thick (default), `4` = double. Other values map to the platform's thinnest style. |
 
@@ -99,7 +99,7 @@ Renderers maintain the following state, with these defaults:
 
 | Grammar | Meaning |
 | --- | --- |
-| `<num:x> <num:y> <num:w> <num:h> re` | Define a rectangle path at a page-relative position. Coordinates are floored to whole cells. Defining a path does not draw it. |
+| `<num:x> <num:y> <num:w> <num:h> re` | Define a rectangle path at a page-relative position. Coordinates are floored to whole cells. The page origin is resolved **here**, not at paint time: a `/NewPage` between `re` and `f` does not move the shape. Defining a path does not draw it. |
 | `f` | Fill the current path with the fill color. |
 | `S` | Stroke the current path's **perimeter** with the stroke color and width. |
 
@@ -124,9 +124,13 @@ unbounded canvas.
 
 | Grammar | Meaning |
 | --- | --- |
-| `/CheckBox` | Insert a centered checkbox (or a visual placeholder) at the cursor. |
-| `(<opt1,opt2,…>) /Dropdown` | Insert a dropdown across up to 6 columns (shrunk at the canvas edge) with a yellow background, defaulting to the first option. |
+| `/CheckBox` | Insert a checkbox at the cursor, centered horizontally and vertically. The centering is fixed chrome: the active alignment does not apply to it. Platforms without a checkbox control write a placeholder glyph **into the cell**, which replaces any text already there — give a checkbox its own cell. |
+| `(<opt1,opt2,…>) /Dropdown` | Insert a dropdown across up to 6 columns (shrunk at the canvas edge) with a yellow background, centered, framed in the **active stroke color and width**, and defaulting to the first option. |
 | `(<note>) /Note` | Attach a note/comment to the cell at the cursor. |
+
+Only a merged range's anchor cell is observable: the cells a dropdown spans
+show the anchor's content and formatting, whatever a given platform leaves in
+them.
 
 ## Error handling
 
@@ -140,6 +144,13 @@ unbounded canvas.
   to parse without bounds.
 
 ## Renderer feature support
+
+Conformance is enforced, not assumed: `tests/conformance.test.js` runs the
+Apps Script and Office Scripts renderers over a shared fixture set and
+compares both to the reference parser and to each other, and
+`tests/pattern-parity.test.js` checks that all four renderers' command
+patterns still describe the same language. See the README's "Conformance
+suite" section.
 
 Not every platform can express every command. The AppleScript/Numbers
 renderer supports only the page, cursor, color, rectangle, and text commands
