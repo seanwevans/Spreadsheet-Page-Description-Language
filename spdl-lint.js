@@ -114,31 +114,117 @@ function formatFindings(name, findings) {
   return lines;
 }
 
-function main() {
-  const fs = require("fs");
-  const files = process.argv.slice(2);
+const USAGE = `Usage: spdl-lint [options] [file ...]
+
+Validates SPDL streams against the grammar in SPEC.md. With no files, reads
+the stream from stdin.
+
+Options:
+  --json               report findings as JSON instead of text
+  --max-warnings <n>   fail when more than n warnings are found
+  --quiet              report errors only (warnings are still counted)
+  -h, --help           show this message
+
+Exits 1 when any error is found, or when --max-warnings is exceeded.`;
+
+// Parses argv into { files, json, quiet, maxWarnings }. Unknown options are
+// an error rather than being treated as filenames.
+function parseArgs(argv) {
+  const options = { files: [], json: false, quiet: false, maxWarnings: Infinity, help: false };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--help" || arg === "-h") {
+      options.help = true;
+    } else if (arg === "--json") {
+      options.json = true;
+    } else if (arg === "--quiet") {
+      options.quiet = true;
+    } else if (arg === "--max-warnings" || arg.startsWith("--max-warnings=")) {
+      const raw = arg.startsWith("--max-warnings=")
+        ? arg.slice("--max-warnings=".length)
+        : argv[++i];
+      const parsed = Number(raw);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(`--max-warnings expects a non-negative integer, got "${raw === undefined ? "" : raw}"`);
+      }
+      options.maxWarnings = parsed;
+    } else if (arg.startsWith("-")) {
+      throw new Error(`unknown option "${arg}"`);
+    } else {
+      options.files.push(arg);
+    }
+  }
+
+  return options;
+}
+
+function lintInputs(inputs, options) {
+  const results = [];
   let errorCount = 0;
   let warningCount = 0;
-
-  const inputs = files.length > 0
-    ? files.map((file) => ({ name: file, stream: fs.readFileSync(file, "utf8") }))
-    : [{ name: "<stdin>", stream: fs.readFileSync(0, "utf8") }];
 
   for (const { name, stream } of inputs) {
     const findings = lint(stream);
     errorCount += findings.errors.length;
     warningCount += findings.warnings.length;
-    for (const line of formatFindings(name, findings)) {
-      console.log(line);
+    results.push({ file: name, errors: findings.errors, warnings: findings.warnings });
+  }
+
+  const overWarningLimit = warningCount > options.maxWarnings;
+  return {
+    results,
+    errorCount,
+    warningCount,
+    maxWarnings: options.maxWarnings === Infinity ? null : options.maxWarnings,
+    ok: errorCount === 0 && !overWarningLimit,
+  };
+}
+
+function main(argv = process.argv.slice(2), out = console) {
+  const fs = require("fs");
+
+  let options;
+  try {
+    options = parseArgs(argv);
+  } catch (error) {
+    out.error(`spdl-lint: ${error.message}\n\n${USAGE}`);
+    return 2;
+  }
+
+  if (options.help) {
+    out.log(USAGE);
+    return 0;
+  }
+
+  const inputs = options.files.length > 0
+    ? options.files.map((file) => ({ name: file, stream: fs.readFileSync(file, "utf8") }))
+    : [{ name: "<stdin>", stream: fs.readFileSync(0, "utf8") }];
+
+  const report = lintInputs(inputs, options);
+
+  if (options.json) {
+    out.log(JSON.stringify(report, null, 2));
+  } else {
+    for (const result of report.results) {
+      const findings = options.quiet
+        ? { errors: result.errors, warnings: [] }
+        : result;
+      for (const line of formatFindings(result.file, findings)) {
+        out.log(line);
+      }
+    }
+    out.log(`${report.errorCount} error(s), ${report.warningCount} warning(s)`);
+    if (report.maxWarnings !== null && report.warningCount > report.maxWarnings) {
+      out.log(`exceeded --max-warnings ${report.maxWarnings}`);
     }
   }
 
-  console.log(`${errorCount} error(s), ${warningCount} warning(s)`);
-  process.exit(errorCount > 0 ? 1 : 0);
+  return report.ok ? 0 : 1;
 }
 
 if (require.main === module) {
-  main();
+  process.exit(main());
 }
 
-module.exports = { lint };
+module.exports = { lint, lintInputs, parseArgs, main, USAGE };

@@ -1,0 +1,45 @@
+name: Publish playground
+
+# Publishes docs/playground.html to GitHub Pages. The page loads
+# `../spdl-parser.js`, so the artifact keeps the repository layout: the site
+# root is the repo root and the playground lives at /docs/playground.html.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - spdl-parser.js
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-flight deployment; queue behind it instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}docs/playground.html
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Stage the playground and the parser it loads
+        run: |
+          mkdir -p _site/docs
+          cp docs/playground.html _site/docs/
+          cp spdl-parser.js _site/
+          # A landing page so the site root is not an empty directory.
+          printf '<!doctype html><meta charset="utf-8"><title>SPDL</title><meta http-equiv="refresh" content="0; url=docs/playground.html"><a href="docs/playground.html">SPDL playground</a>\n' > _site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

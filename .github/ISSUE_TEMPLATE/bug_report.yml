@@ -1,0 +1,60 @@
+name: Bug report
+description: A stream that renders wrongly, or a renderer that misbehaves
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A stream that reproduces the problem is worth more than a description
+        of it. The smaller the stream, the faster this gets fixed.
+
+  - type: textarea
+    id: stream
+    attributes:
+      label: SPDL stream
+      description: The smallest stream that shows the problem.
+      render: text
+      placeholder: |
+        16 20 MediaBox
+        (Hello World) Tj
+    validations:
+      required: true
+
+  - type: dropdown
+    id: renderer
+    attributes:
+      label: Renderer
+      multiple: true
+      options:
+        - Google Apps Script (Sheets)
+        - Office Scripts (Excel for the web)
+        - VBA (Excel desktop)
+        - AppleScript (Numbers)
+        - Airtable
+        - Browser playground
+        - Reference parser / spdl-lint
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Quote the rule in SPEC.md if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include any log output the renderer produced.
+    validations:
+      required: true
+
+  - type: textarea
+    id: lint
+    attributes:
+      label: spdl-lint output
+      description: "Optional: `node spdl-lint.js your-stream.spdl`"
+      render: text
