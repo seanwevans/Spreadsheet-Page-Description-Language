@@ -1,4 +1,11 @@
-# SPDL Specification (v1.0)
+# SPDL Specification (v1.1)
+
+Version 1.1 adds the graphics state stack (`q`/`Q`), the line primitive
+(`l`), wrapped text (`/TextBox`), per-column and per-row sizing
+(`/ColWidth`, `/RowHeight`) and reusable definitions (`/Def`, `/EndDef`,
+`/Do`). Every 1.0 stream is still a valid 1.1 stream, and a renderer that
+implements only 1.0 skips the new commands the way it skips any command it
+does not recognize.
 
 This document defines the canonical semantics of the Spreadsheet Page
 Description Language. Every renderer in this repository targets these rules;
@@ -74,11 +81,24 @@ Renderers maintain the following state, with these defaults:
 | `/MoveTo <int:X> <int:Y>` | Move the cursor to an absolute position **relative to the current page's top-left** (1-based). X is clamped to [1, pageWidth], or to the canvas width when no page is defined; Y is clamped to the page's rows, or to the canvas height when no page is defined. |
 | `<num:dx> <num:dy> Td` | Move the cursor relatively by tenths of a cell. Deltas are divided by 10 and **truncated toward zero**: `15 → +1`, `-15 → -1`, `5 → 0`. |
 
+### Graphics state stack
+
+| Grammar | Meaning |
+| --- | --- |
+| `q` | Push a copy of the graphics state: cursor, fill and stroke color, stroke width, font size, bold/italic/underline, rotation, alignment, and the current path. |
+| `Q` | Pop the most recently saved state. `Q` without a matching `q` restores nothing and is logged. |
+
+The **page** is not part of the saved state: a `/NewPage` inside `q … Q`
+still applies after the `Q`, because page structure is document layout rather
+than drawing state. The cursor *is* saved, so a `Q` after a page break puts
+the cursor back where the `q` was — on the previous page.
+
 ### Text and typography
 
 | Grammar | Meaning |
 | --- | --- |
 | `(<text>) Tj` | Write `text` at the cursor using the active fill color, font size, weight, style, underline, rotation, and alignment. |
+| `<uint:w> <uint:h> (<text>) /TextBox` | Write wrapped text into a `w × h` box at the cursor: the text is word-wrapped to at most `w × 4` characters per line (4 characters is what a 15pt string fits in a default 25px cell), and each line is written to the leftmost cell of its row. Long strings spill over the empty cells to their right, the way a spreadsheet displays them. Lines past `h` are dropped with a log. A word longer than a line is not split. |
 | `(<url>) (<label>) /Link` | Insert a hyperlink at the cursor with the active text styling — color, size, weight, style, underline, rotation and alignment all apply, exactly as for `Tj`. Renderers that build formulas must escape the URL and label so content cannot break out of the formula string. |
 | `/F<uint:n> [<num:size>] Tf` | Select font variant: `n = 2` → bold, `n = 3` → italic, anything else → regular. The optional size operand sets the font size where supported. |
 | `<num:size> Ts` | Set the font size in points. Non-positive or unparsable sizes reset to the default (15). Decimals are allowed. |
@@ -102,6 +122,7 @@ Renderers maintain the following state, with these defaults:
 | `<num:x> <num:y> <num:w> <num:h> re` | Define a rectangle path at a page-relative position. Coordinates are floored to whole cells. The page origin is resolved **here**, not at paint time: a `/NewPage` between `re` and `f` does not move the shape. Defining a path does not draw it. |
 | `f` | Fill the current path with the fill color. |
 | `S` | Stroke the current path's **perimeter** with the stroke color and width. |
+| `<int:x1> <int:y1> <int:x2> <int:y2> l` | Stroke an axis-aligned line between two page-relative points, using the active stroke color and width. The endpoints may be given in either order. A **diagonal** line — one where neither the x nor the y coordinates match — has no cell-grid representation: it is logged and skipped rather than approximated. |
 
 Rectangles that extend past the canvas are clamped to it; rectangles entirely
 outside the canvas are skipped with a log message. `S` strokes the perimeter
@@ -128,9 +149,37 @@ unbounded canvas.
 | `(<opt1,opt2,…>) /Dropdown` | Insert a dropdown across up to 6 columns (shrunk at the canvas edge) with a yellow background, centered, framed in the **active stroke color and width**, and defaulting to the first option. |
 | `(<note>) /Note` | Attach a note/comment to the cell at the cursor. |
 
-Only a merged range's anchor cell is observable: the cells a dropdown spans
-show the anchor's content and formatting, whatever a given platform leaves in
-them.
+### Sheet geometry
+
+| Grammar | Meaning |
+| --- | --- |
+| `<uint:px> /ColWidth` | Set the width of the cursor's **column** in pixels. |
+| `<uint:px> /RowHeight` | Set the height of the cursor's **row** in pixels. |
+
+These are the one place a command escapes the uniform grid, so a document can
+give a label column room without changing the cell size everywhere. The last
+request for a given row or column wins; platforms that cannot resize
+individual rows or columns log and skip.
+
+### Reusable definitions
+
+| Grammar | Meaning |
+| --- | --- |
+| `/Def <name>` | Begin a definition. Every following command is captured rather than drawn, until `/EndDef`. |
+| `/EndDef` | End the current definition. Without a matching `/Def` it is ignored. |
+| `/Do <name>` | Replay the named definition's commands in place. |
+
+Names match `[A-Za-z][A-Za-z0-9_-]*`. Definitions are collected in a pass of
+their own, so a `/Do` may appear before its `/Def`, and a definition may
+invoke another. A `/Do` naming an unknown definition is skipped, as is one
+that would recurse — directly or through another definition — or nest more
+than 8 deep. A `/Def` that is never closed captures the rest of the stream:
+nothing after it draws, and `spdl-lint` warns about it.
+
+Definitions are a source-level facility: they expand before the stream is
+interpreted, so they cannot capture or restore graphics state on their own.
+Pair them with `q`/`Q` when a definition should leave the state as it found
+it.
 
 ## Error handling
 
@@ -158,3 +207,11 @@ renderer supports only the page, cursor, color, rectangle, and text commands
 external images; Airtable stores alignment/rotation as metadata fields rather
 than applying them visually. In all such cases the renderer logs and skips —
 the stream itself remains portable.
+
+The commands added in 1.1 — `q`/`Q`, `l`, `/TextBox`, `/ColWidth`,
+`/RowHeight`, `/Def`, `/EndDef` and `/Do` — are implemented by the reference
+parser (and therefore by the Airtable renderer and the browser playground)
+and by the Google Apps Script renderer. The Office Scripts, VBA and
+AppleScript renderers do not recognize them yet, so they log and skip them,
+which is the same contract as any other unsupported command: a stream using
+them renders a subset there rather than failing.

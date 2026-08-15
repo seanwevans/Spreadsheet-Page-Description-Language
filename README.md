@@ -3,7 +3,7 @@
 
 SPDL is a lightweight, interpreted markup language for building high-fidelity, interactive documents inside spreadsheets. It separates a linear **content stream** from the rendered **presentation layer**, letting you describe pages, text, shapes, images, and form controls using concise commands that are parsed by a renderer.
 
-![Status](https://img.shields.io/badge/Specification-v1.0-blue)
+![Status](https://img.shields.io/badge/Specification-v1.1-blue)
 ![Renderers](https://img.shields.io/badge/Renderers-Sheets%20%7C%20Excel%20%7C%20VBA%20%7C%20Numbers%20%7C%20Airtable-green)
 
 ## Table of Contents
@@ -173,6 +173,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 
 ### Text and Typography
 - `(text) Tj` — Write text at the current cursor with active styling (fill color, weight, style, rotation, alignment).
+- `w h (text) /TextBox` — Write word-wrapped text into a `w × h` box at the cursor, one wrapped line per row (roughly four characters per cell at the default size). Lines past `h` are dropped.
 - `/Link` — `(url) (label) /Link` inserts a hyperlink formula using the current font settings.
 - `/F2 15 Tf` — Sets **bold** font; `/F3` sets **italic**. The optional size operand sets the font size (fractions allowed); font size defaults to 15 pt and can also be set with `Ts` (see examples).
 - `1 Tr` — Underline on; `0 Tr` — remove underline.
@@ -192,6 +193,21 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 - `x y w h re` — Define a rectangle path at page-relative position.
 - `f` — Fill the last path using the current fill color.
 - `S` — Stroke the last path using the current stroke color and width.
+- `x1 y1 x2 y2 l` — Stroke an axis-aligned line between two page-relative points. Diagonals have no cell-grid representation and are skipped.
+
+### Graphics State Stack
+- `q` — Save the graphics state (cursor, colors, stroke width, font, rotation, alignment, current path).
+- `Q` — Restore the most recently saved state. The page is *not* part of it, so a `/NewPage` inside `q … Q` still applies afterwards.
+
+### Sheet Geometry
+- `n /ColWidth` — Set the cursor column's width in pixels.
+- `n /RowHeight` — Set the cursor row's height in pixels.
+
+### Reusable Definitions
+- `/Def name` … `/EndDef` — Capture a block of commands under a name instead of drawing them.
+- `/Do name` — Replay a definition in place. A `/Do` may appear before its `/Def`; unknown and recursive uses are skipped.
+
+Definitions expand before the stream is interpreted, so they carry no state of their own — wrap a definition's body in `q`/`Q` if it should leave the graphics state as it found it.
 
 ### Images
 - `w h (url) /InsertImage` — Insert an image at the cursor, sized to `w × h` pixels.
@@ -244,7 +260,7 @@ CI runs the tests on Node 18/20/22 and the two lint steps on every pull request.
 It is also published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main` that touches the playground or the parser. To turn it on, set **Settings → Pages → Source** to **GitHub Actions**; the deployed page is at `/docs/playground.html`.
 
 ## Examples
-Ready-to-run streams live in [`examples/`](examples/) (`hello-world.spdl`, `shapes-and-strokes.spdl`, and the fuller `example.spdl` used by the Airtable config). Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`, or point the Airtable renderer's `streamPath` at one of the files.
+Ready-to-run streams live in [`examples/`](examples/) (`hello-world.spdl`, `shapes-and-strokes.spdl`, `invoice.spdl` — which exercises the 1.1 additions — and the fuller `example.spdl` used by the Airtable config). Place these streams in `01_Hex_Stream` (starting at row 2) and run `renderPDF()`, or point the Airtable renderer's `streamPath` at one of the files.
 
 ### Hello World
 ```spdl
@@ -313,6 +329,29 @@ S
 2 2 8 6 re
 S
 ```
+
+### Invoice (SPDL 1.1)
+```spdl
+20 28 MediaBox
+/Def rule
+0 0 0 SC
+1 w
+1 0 18 0 l
+/EndDef
+
+q
+/F2 24 Tf
+0.1 0.1 0.4 rg
+/MoveTo 2 2
+(Invoice 0042) Tj
+Q
+
+/MoveTo 1 8
+/Do rule
+/MoveTo 2 15
+6 4 (Payment is due within 30 days.) /TextBox
+```
+The full stream is in [`examples/invoice.spdl`](examples/invoice.spdl).
 
 ## Tips and Limitations
 - The renderer clamps `/MoveTo` coordinates within the current page and sheet bounds to avoid errors.

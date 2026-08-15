@@ -1,0 +1,83 @@
+% An invoice, using the SPDL 1.1 additions: a reusable definition for the
+% table rules, the graphics state stack so the heading style does not leak,
+% wrapped text for the notes, and a wider first column.
+20 28 MediaBox
+
+% A horizontal rule across the page, drawn wherever the caller left the
+% stroke state. Definitions expand before rendering, so /Do replays these
+% commands in place.
+/Def rule
+0 0 0 SC
+1 w
+1 0 18 0 l
+/EndDef
+
+% --- Heading -----------------------------------------------------------
+q
+/F2 24 Tf
+0.1 0.1 0.4 rg
+/MoveTo 2 2
+(Invoice 0042) Tj
+Q
+
+/MoveTo 2 4
+(Acme Widgets Ltd) Tj
+/MoveTo 2 5
+(Due 30 September) Tj
+
+% --- Table -------------------------------------------------------------
+q
+/F2 Tf
+/MoveTo 2 7
+(Item) Tj
+/MoveTo 10 7
+(Qty) Tj
+/MoveTo 14 7
+(Amount) Tj
+Q
+
+/MoveTo 1 8
+/Do rule
+
+/MoveTo 2 9
+(Widget, large) Tj
+/MoveTo 10 9
+(12) Tj
+/MoveTo 14 9
+(144.00) Tj
+
+/MoveTo 2 10
+(Widget, small) Tj
+/MoveTo 10 10
+(30) Tj
+/MoveTo 14 10
+(90.00) Tj
+
+/MoveTo 1 11
+/Do rule
+
+q
+/F2 Tf
+/MoveTo 2 12
+(Total) Tj
+/MoveTo 14 12
+(234.00) Tj
+Q
+
+% The item column carries long names, so give it room.
+/MoveTo 2 12
+160 /ColWidth
+
+% --- Notes -------------------------------------------------------------
+/MoveTo 2 15
+/F3 Tf
+6 4 (Payment is due within 30 days. Late payments accrue interest at 2 percent per month.) /TextBox
+/F1 Tf
+
+% --- Sign-off ----------------------------------------------------------
+/MoveTo 1 20
+/Do rule
+/MoveTo 2 21
+(Signature) Tj
+/MoveTo 2 22
+/CheckBox
