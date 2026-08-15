@@ -1,15 +1,50 @@
 {
-  "name": "spdl-renderers",
+  "name": "spdl-parser",
   "version": "1.0.0",
-  "private": true,
-  "description": "Renderers for the Spreadsheet Page Description Language (SPDL)",
+  "description": "Reference parser, linter, SVG exporter and CLI for the Spreadsheet Page Description Language (SPDL)",
   "license": "MIT",
+  "keywords": [
+    "spdl",
+    "spreadsheet",
+    "page-description-language",
+    "google-sheets",
+    "excel",
+    "airtable",
+    "svg",
+    "parser"
+  ],
+  "homepage": "https://github.com/seanwevans/Spreadsheet-Page-Description-Language#readme",
+  "bugs": "https://github.com/seanwevans/Spreadsheet-Page-Description-Language/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seanwevans/Spreadsheet-Page-Description-Language.git"
+  },
+  "main": "spdl-parser.js",
+  "bin": {
+    "spdl": "bin/spdl.js",
+    "md2spdl": "tools/md2spdl.js"
+  },
+  "files": [
+    "bin/",
+    "tools/",
+    "spdl-parser.js",
+    "spdl-lint.js",
+    "spdl-svg.js",
+    "spdlrender.gs",
+    "spdlrender.office.ts",
+    "spdlrender.vba",
+    "spdlrender.numbers.applescript",
+    "spdlrender.airtable.js",
+    "spdlrender.airtable.config.json",
+    "SPEC.md"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "test": "node --test",
     "golden:update": "node scripts/update-golden.js",
-    "lint:examples": "node spdl-lint.js examples/*.spdl"
+    "lint:examples": "node spdl-lint.js examples/*.spdl",
+    "render:examples": "node scripts/render-examples.js"
   }
 }
