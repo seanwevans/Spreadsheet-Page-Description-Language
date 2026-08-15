@@ -93,7 +93,7 @@ Apple Numbers does not offer as rich an API as Google Sheets or Office, but the 
 `spdlrender.airtable.js` lets you push SPDL streams into Airtable bases that expose REST APIs but lack native scripting. The renderer maps one record per cell in a grid-style table and uses `performUpsert` on `Row`+`Col` to avoid duplicates.
 
 ### Airtable table schema
-- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `ImageURL` (URL or single-line text), `ImageWidth` (number), `ImageHeight` (number), `Meta` (long text for JSON metadata), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
+- **02_Rendered_View**: target table with fields `Row` (number), `Col` (number), `Value` (single line or rich text), `Background` (single line hex), `TextColor` (hex), `FontSize` (number), `Bold` (checkbox), `Italic` (checkbox), `Underline` (checkbox), `Link` (URL), `Rotation` (number), `Alignment` (single select: `HLeft|HCenter|HRight|VTop|VMiddle|VBottom`), `BorderColor` (hex), `BorderStyle` (single line), `StrokeWidth` (number), `Attachment` (attachment), `ImageURL` (URL or single-line text), `ImageWidth` (number), `ImageHeight` (number), `Meta` (long text for JSON metadata), `Dropdown` (single select), `Checkbox` (checkbox), `Note` (long text).
 - **01_Hex_Stream** (optional): store SPDL commands for reference. The script expects the stream locally (stdin/file); storing it in Airtable is for traceability only.
 
 ### Configuration
@@ -130,7 +130,7 @@ When `truncateTable` is enabled the script deletes existing records in batches o
 
 ### Supported SPDL commands and constraints
 - `MediaBox`, `/NewPage`, `/MoveTo`, `Td` — cursor and paging; Y is clamped to the last defined page height.
-- `(text) Tj` — writes text with fill color, bold/italic, underline, rotation, and alignment fields.
+- `(text) Tj` — writes text with fill color, font size, bold/italic, underline, rotation, and alignment fields.
 - `(url) (label) /Link` — stores label and URL; Airtable renders hyperlinks if the field type supports it.
 - `r g b rg` / `r g b SC` — maps to `Background`/`BorderColor` hex values.
 - `x y w h re` + `f` or `S` — fills rectangular regions (or strokes their perimeter cells) by upserting individual cells.
@@ -171,7 +171,7 @@ The renderer understands a subset of PDF/PostScript-inspired operations. Command
 ### Text and Typography
 - `(text) Tj` — Write text at the current cursor with active styling (fill color, weight, style, rotation, alignment).
 - `/Link` — `(url) (label) /Link` inserts a hyperlink formula using the current font settings.
-- `/F2 15 Tf` — Sets **bold** font; `/F3` sets **italic**. Font size defaults to 15 pt; adjust with `Ts` in the command stream (see examples).
+- `/F2 15 Tf` — Sets **bold** font; `/F3` sets **italic**. The optional size operand sets the font size (fractions allowed); font size defaults to 15 pt and can also be set with `Ts` (see examples).
 - `1 Tr` — Underline on; `0 Tr` — remove underline.
 - `n TA` — Alignment shorthand:
   - `0/1/2` → horizontal left/center/right
