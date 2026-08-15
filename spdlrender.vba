@@ -17,7 +17,7 @@ Private Const PIXEL_ART_PATTERN As String = "^(\d+)\s+(\d+)\s+ID\s+(\S+)$"
 Private Const ALIGN_COMMAND_PATTERN As String = "^/Align\s+(\S+)$"
 Private Const FILL_COLOR_PATTERN As String = "^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+rg$"
 Private Const STROKE_COLOR_PATTERN As String = "^(\d*\.?\d+)\s+(\d*\.?\d+)\s+(\d*\.?\d+)\s+SC$"
-Private Const FONT_COMMAND_PATTERN As String = "^/F(\d+)(\s+\d+(\.\d+)?)?\s+Tf$"
+Private Const FONT_COMMAND_PATTERN As String = "^/F(\d+)(?:\s+(\d*\.?\d+))?\s+Tf$"
 Private Const UNDERLINE_PATTERN As String = "^([01])\s+Tr$"
 Private Const FONT_SIZE_PATTERN As String = "^([+-]?\d*\.?\d+)\s+Ts$"
 Private Const ALIGN_CODE_PATTERN As String = "^(\d+)\s+TA$"
@@ -307,6 +307,11 @@ Public Sub RenderSPDL()
         If Not m Is Nothing Then
             isBold = m.SubMatches(0) = "2"
             isItalic = m.SubMatches(0) = "3"
+            ' The optional size operand of /Fn <size> Tf sets the font size.
+            If Len(m.SubMatches(1) & "") > 0 Then
+                currentFontSize = Val(m.SubMatches(1))
+                If currentFontSize <= 0 Then currentFontSize = defaultFontSize
+            End If
             GoTo NextCommand
         End If
 

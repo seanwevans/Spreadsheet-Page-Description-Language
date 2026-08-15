@@ -125,6 +125,7 @@
       "Col": 2,
       "Value": "Outlined box above",
       "TextColor": "#000000",
+      "FontSize": 15,
       "Bold": false,
       "Italic": false,
       "Underline": false,
